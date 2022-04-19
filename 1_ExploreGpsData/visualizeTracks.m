@@ -333,11 +333,17 @@ aveSampTimesInSForTracks = vertcat(cellfun(@(c) vertcat( ...
     sampTimesInSEachDay, 'UniformOutput', false));
 aveSampTimesInSForTracks = vertcat(aveSampTimesInSForTracks{:});
 
+numOfPtsForTracks = vertcat(cellfun(@(c) vertcat( ...
+    cellfun(@(pts) size(pts, 1), c)), ...
+    gpsLonLatTracksEachDay, 'UniformOutput', false));
+numOfPtsForTracks = vertcat(numOfPtsForTracks{:});
+
 disp(['    [', datestr(now, datetimeFormat), ...
     '] Generating overview figures for sampling time ...'])
 
-fieldsToGenStaFig = {'sampTimesInS', 'aveSampTimesInSForTracks'};
-zoomXRanges = {[0, 600], [0, 1800]};
+fieldsToGenStaFig = {'sampTimesInS', 'aveSampTimesInSForTracks', ...
+    'numOfPtsForTracks'};
+zoomXRanges = {[0, 600], [0, 1800], [0, 600]};
 
 for idxField = 1:length(fieldsToGenStaFig)
     curField = fieldsToGenStaFig{idxField};
