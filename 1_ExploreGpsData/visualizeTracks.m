@@ -67,11 +67,14 @@ disp(' ')
 disp(['[', datestr(now, datetimeFormat), ...
     '] Generating overall statistics figures ...'])
 
-fieldsToGenFilteredHistogram = {'vehicleId', 'heading',
+fieldsToGenFilteredHistogram = {'vehicleId', 'heading', ...
     'speedkph', 'speedmph'};
+zoomXRanges = {[], [], [0, 150], [0, 100]};
+
 for idxField = 1:length(fieldsToGenFilteredHistogram)
     curField = fieldsToGenFilteredHistogram{idxField};
     curData = gpsLocTable{:, curField};
+    curZoomXRange = zoomXRanges{idxField};
 
     figure; histogram(curData);
     axis tight; grid on; grid minor;
@@ -83,13 +86,27 @@ for idxField = 1:length(fieldsToGenFilteredHistogram)
     saveas(gcf, fullfile(pathToSaveResults, ...
         ['OverallStatistics_Histogram_', curField, '.jpg']));
 
+    if ~isempty(curZoomXRange)
+        xlim(curZoomXRange);
+        saveas(gcf, fullfile(pathToSaveResults, ...
+            ['OverallStatistics_Histogram_', curField, '_ZoomedIn.jpg']));
+    end
+
     figure; ecdf(curData);
     grid on; grid minor;
     xlabel(curField);
     ylabel('Empirical CDF');
+    title(['min = ', num2str(min(curData)), ...
+        ', MAX = ', num2str(max(curData))])
 
     saveas(gcf, fullfile(pathToSaveResults, ...
         ['OverallStatistics_ECDF_', curField, '.jpg']));
+
+    if ~isempty(curZoomXRange)
+        xlim(curZoomXRange);
+        saveas(gcf, fullfile(pathToSaveResults, ...
+            ['OverallStatistics_ECDF_', curField, '_ZoomedIn.jpg']));
+    end
 end
 
 fieldsToGenNonZeroHistogram = {'speedkph', 'speedmph'};
