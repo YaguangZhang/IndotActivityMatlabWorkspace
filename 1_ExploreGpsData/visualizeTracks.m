@@ -105,12 +105,21 @@ for idxField = 1:length(fieldsToGenNonZeroHistogram)
     % Remove invalid values.
     curValData = curData(curFctValidation(curData));
 
+    numOfIgnoredZeroPts = sum(curData==0);
+    numOfPts = size(curData,1);
+    numOfTooBigPts = numOfPts - size(curValData,1) - numOfIgnoredZeroPts;
+
     figure('Position', curFigPos); histogram(curValData);
     axis tight; grid on; grid minor;
     xlabel([curField, ' s.t. ', char(curFctValidation)]);
     ylabel('Record Count (#)');
     title(['min = ', num2str(min(curValData)), ...
-        ', MAX = ', num2str(max(curValData))])
+        ', MAX = ', num2str(max(curValData)), ...
+        '; # of ignored zero pts = ', num2str(numOfIgnoredZeroPts), ...
+        ' (', num2str(numOfIgnoredZeroPts/numOfPts*100, '%.2f'), ...
+        '%), # of ignored too big pts = ', ...
+        num2str(numOfTooBigPts), ' (', ...
+        num2str(numOfTooBigPts/numOfPts*100, '%.2f'), '%)']);
 
     saveas(gcf, fullfile(pathToSaveResults, ...
         ['OverallStatistics_ValidValue_Histogram_', curField, '.jpg']));
@@ -214,7 +223,7 @@ disp(['    [', datestr(now, datetimeFormat), ...
 
 % Reuse background graphics.
 figure('Position', [0,0,800,800]); hold on;
-hPolyIn = plot(inBoundaryLatLons(:,2), inBoundaryLatLons(:,1), ...
+plot(inBoundaryLatLons(:,2), inBoundaryLatLons(:,1), ...
     'k-', 'LineWidth', 3);
 xlabel('Longitute'); ylabel('Latitude');
 plot_google_map('MapType', 'road');
@@ -245,6 +254,52 @@ for idxDay = 1:numOfDays
 
     delete([hTrackLines{:}]);
 end
+
+disp(['    [', datestr(now, datetimeFormat), ...
+    '] Locating samples out of IN ...'])
+% Samples out of Indiana.
+gpsLonLatCoors = vertcat(cellfun(@(c) vertcat(c{:}), ...
+    gpsLonLatTracksEachDay, 'UniformOutput', false));
+gpsLonLatCoors = vertcat(gpsLonLatCoors{:});
+
+% There are too many points to be handled by the built-in funciton
+% inpolygon. We noticed some false alarms from InPolygon. Here, we will use
+% another faster implementation of inpolygon, called inpoly2.
+boolsGpsLonLatCoorsOutOfIn = ~inpoly2(gpsLonLatCoors, ...
+    inBoundaryLatLons(:,2:-1:1));
+
+gpsLonLatCoorsOutOfIn = gpsLonLatCoors(boolsGpsLonLatCoorsOutOfIn, :);
+
+figure('Position', [0,0,800,800]); hold on;
+plot(inBoundaryLatLons(:,2), inBoundaryLatLons(:,1), ...
+    'k-', 'LineWidth', 3);
+plot(gpsLonLatCoorsOutOfIn(:,1), gpsLonLatCoorsOutOfIn(:,2), 'r.');
+xlabel('Longitute'); ylabel('Latitude');
+plot_google_map('MapType', 'road');
+title(['Total # of Samples Out of IN: ', ...
+    num2str(size(gpsLonLatCoorsOutOfIn,1))]);
+
+saveas(gcf, fullfile(pathToSaveDailyTrackOverviewFigs, ...
+    'SamplesOutOfIndiana.jpg'));
+saveas(gcf, fullfile(pathToSaveDailyTrackOverviewFigs, ...
+    'SamplesOutOfIndiana.fig'));
+
+% Zoom the map to Atlanta.
+axisToSetAtlanta ...
+    = [-84.23889285, -84.22676274, 33.95715299, 33.96773302];
+axis(axisToSetAtlanta);
+plot_google_map('MapType', 'road');
+
+title(['Total # of Potentially Anomaly Samples in This View: ', ...
+    num2str(sum(InPolygon( ...
+    gpsLonLatCoorsOutOfIn(:,1), gpsLonLatCoorsOutOfIn(:,2), ...
+    axisToSetAtlanta([1,2,2,1,1]), axisToSetAtlanta([3,3,4,4,3]) ...
+    )))]);
+
+saveas(gcf, fullfile(pathToSaveDailyTrackOverviewFigs, ...
+    'SamplesOutOfIndiana_Atlanta.jpg'));
+saveas(gcf, fullfile(pathToSaveDailyTrackOverviewFigs, ...
+    'SamplesOutOfIndiana_Atlanta.fig'));
 
 disp(['[', datestr(now, datetimeFormat), ...
     '] Done!'])
