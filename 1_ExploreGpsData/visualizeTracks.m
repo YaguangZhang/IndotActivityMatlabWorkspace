@@ -240,9 +240,10 @@ disp(['    [', datestr(now, datetimeFormat), ...
 
 % Reuse background graphics.
 figure('Position', [0,0,800,800]); hold on;
+set(gca, 'FontWeight', 'bold');
 plot(inBoundaryLatLons(:,2), inBoundaryLatLons(:,1), ...
     'k-', 'LineWidth', 3);
-xlabel('Longitute'); ylabel('Latitude');
+xlabel('Longitude (degree)'); ylabel('Latitude (degree)');
 plot_google_map('MapType', 'road');
 axis manual; axisToSetIn = axis;
 axisToSetIndianapolis ...
@@ -254,10 +255,12 @@ for idxDay = 1:numOfDays
     curGpsLonLatTracks = gpsLonLatTracksEachDay{idxDay};
     for idxTrack = 1:curNumOfVehs
         hTrackLines{idxTrack} = plot(curGpsLonLatTracks{idxTrack}(:,1), ...
-            curGpsLonLatTracks{idxTrack}(:,2), '.--', ...
-            'MarkerSize', 9, 'LineWidth', 0.2);
+            curGpsLonLatTracks{idxTrack}(:,2), '.-', ...
+            'MarkerSize', 9);
     end
     [y,m,d] = ymd(gpsLocTableDays{idxDay}{1,'timestamp'});
+    title(['GPS Tracks on ', ...
+        num2str(m), '/', num2str(d), '/', num2str(y)]);
 
     axis(axisToSetIn);
     saveas(gcf, fullfile(pathToSaveDailyTrackOverviewFigs, ...
