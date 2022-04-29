@@ -397,6 +397,141 @@ end
 disp(['[', datestr(now, datetimeFormat), ...
     '] Done!'])
 
+%% Plot Sampling Time on Map
+
+disp(' ')
+disp(['[', datestr(now, datetimeFormat), ...
+    '] Showing sampling time on map for tracks on each day ...'])
+
+% For the overview plot.
+[gpsLonLatTracks, gpsLonLatToPlot, sampTimesInMinToPlot, boolsOvertime] ...
+    = deal(cell(numOfDays, 1));
+
+% Reuse background graphics.
+figure('Position', [0,0,800,800]); hold on;
+plot(inBoundaryLatLons(:,2), inBoundaryLatLons(:,1), ...
+    'k-', 'LineWidth', 3);
+xlabel('Longitute'); ylabel('Latitude');
+
+curColomap = hot; curColomap = curColomap(end:-1:1, :);
+colormap(curColomap);
+maxSampTimeInMinForPlot3k = 10;
+overTimeSampColor = curColomap(end, :);
+lonLatTrackColor = 'b';
+colorbar;
+
+plot_google_map('MapType', 'road'); axis manual;
+for idxDay = 1:numOfDays
+    [y,m,d] = ymd(gpsLocTableDays{idxDay}{1,'timestamp'});
+    curFigTitle = ['Sampling Time for ', ...
+        num2str(m), '/', num2str(d), '/', num2str(y)];
+    curXLabel = 'Longitude (degree)';
+    curYLabel = 'Latitude (degree)';
+    curZLabel = '';
+    curPlot3kCbLabel = 'Sampling Time (min)';
+
+    % For plotting the tracks as background.
+    curNumOfVehs = length(unique(gpsLocTableDays{idxDay}.vehicleId));
+    hTrackLines = cell(curNumOfVehs, 1);
+
+    curGpsLonLatTracks = gpsLonLatTracksEachDay{idxDay};
+    for idxTrack = 1:curNumOfVehs
+        hTrackLines{idxTrack} = plot( ...
+            curGpsLonLatTracks{idxTrack}(:,1), ...
+            curGpsLonLatTracks{idxTrack}(:,2), '.-', ...
+            'MarkerSize', 9, 'Color', lonLatTrackColor);
+    end
+
+    % Get rid of the first GPS loc for each track and merge the records.
+    curGpsLonLatToPlot = vertcat(cellfun( ...
+        @(lonLatMat) lonLatMat(2:end, :), ...
+        gpsLonLatTracksEachDay{idxDay}, ...
+        'UniformOutput', false));
+    curGpsLonLatToPlot = vertcat(curGpsLonLatToPlot{:});
+
+    curSampTimesInMinToPlot = sampTimesInSEachDay{idxDay};
+    curSampTimesInMinToPlot = vertcat(curSampTimesInMinToPlot{:})./60;
+
+    curBoolsOvertime = curSampTimesInMinToPlot>maxSampTimeInMinForPlot3k;
+    plot3k([curGpsLonLatToPlot(~curBoolsOvertime, :), ...
+        curSampTimesInMinToPlot(~curBoolsOvertime)], ...
+        'ColorRange', [0, maxSampTimeInMinForPlot3k], 'Labels', ...
+        {curFigTitle, curXLabel, curYLabel, curZLabel, curPlot3kCbLabel});
+    view(2); zlim([0, maxSampTimeInMinForPlot3k]);
+
+    if any(curBoolsOvertime)
+        hOverTimeRecords = plot3( ...
+            curGpsLonLatToPlot(curBoolsOvertime, 1), ...
+            curGpsLonLatToPlot(curBoolsOvertime, 2), ...
+            maxSampTimeInMinForPlot3k.*ones(sum(curBoolsOvertime), 1), ...
+            'x', 'Color', overTimeSampColor, 'LineStyle', 'none');
+
+        legend(hOverTimeRecords, ...
+            ['Over ', num2str(maxSampTimeInMinForPlot3k), ' min']);
+    end
+
+    saveas(gcf, fullfile(pathToSaveDailyTrackOverviewFigs, ...
+        ['SampTimeInS_Date_', ...
+        num2str(y), '_', num2str(m), '_', num2str(d), '.jpg']));
+
+    % Delete current figure objects.
+    hSampTimePlot3k = findobj(gca,'tag','plot3k');
+    delete(hSampTimePlot3k);
+    delete([hTrackLines{:}]);
+    if any(curBoolsOvertime)
+        delete(hOverTimeRecords);
+    end
+    legend off;
+
+    gpsLonLatTracks{idxDay} = curGpsLonLatTracks;
+    gpsLonLatToPlot{idxDay} = curGpsLonLatToPlot;
+    sampTimesInMinToPlot{idxDay} = curSampTimesInMinToPlot;
+    boolsOvertime{idxDay} = curBoolsOvertime;
+end
+
+gpsLonLatTracks = vertcat(gpsLonLatTracks{:});
+gpsLonLatToPlot = vertcat(gpsLonLatToPlot{:});
+sampTimesInMinToPlot = vertcat(sampTimesInMinToPlot{:});
+boolsOvertime = logical(vertcat(boolsOvertime{:}));
+
+numOfVehs = length(gpsLonLatTracks);
+hTrackLines = cell(numOfVehs, 1);
+for idxTrack = 1:numOfVehs
+    hTrackLines{idxTrack} = plot( ...
+        gpsLonLatTracks{idxTrack}(:,1), ...
+        gpsLonLatTracks{idxTrack}(:,2), '.-', ...
+        'MarkerSize', 9, 'Color', lonLatTrackColor);
+end
+
+title('All GPS Tracks');
+set(colorbar,'visible','off');
+saveas(gcf, fullfile(pathToSaveDailyTrackOverviewFigs, ...
+    'SampTimeInS_Overview_TracksOnly.jpg'));
+
+curFigTitle = 'Sampling Time for All Dates';
+plot3k([gpsLonLatToPlot(~boolsOvertime, :), ...
+    sampTimesInMinToPlot(~boolsOvertime)], ...
+    'ColorRange', [0, maxSampTimeInMinForPlot3k], 'Labels', ...
+    {curFigTitle, curXLabel, curYLabel, curZLabel, curPlot3kCbLabel});
+view(2); zlim([0, maxSampTimeInMinForPlot3k]);
+
+if any(boolsOvertime)
+    hOverTimeRecords = plot3( ...
+        gpsLonLatToPlot(boolsOvertime, 1), ...
+        gpsLonLatToPlot(boolsOvertime, 2), ...
+        maxSampTimeInMinForPlot3k.*ones(sum(boolsOvertime), 1), ...
+        'x', 'Color', overTimeSampColor, 'LineStyle', 'none');
+
+    legend(hOverTimeRecords, ...
+        ['Over ', num2str(maxSampTimeInMinForPlot3k), ' min']);
+end
+
+saveas(gcf, fullfile(pathToSaveDailyTrackOverviewFigs, ...
+    'SampTimeInS_Overview.jpg'));
+
+disp(['[', datestr(now, datetimeFormat), ...
+    '] Done!'])
+
 %% Save Workspace
 
 % No need to keep the figures.
