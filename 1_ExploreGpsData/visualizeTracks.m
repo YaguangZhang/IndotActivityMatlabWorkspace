@@ -397,4 +397,18 @@ end
 disp(['[', datestr(now, datetimeFormat), ...
     '] Done!'])
 
+%% Save Workspace
+
+% No need to keep the figures.
+close all;
+
+disp(' ')
+disp(['[', datestr(now, datetimeFormat), ...
+    '] Saving workspace for debugging purposes ...'])
+
+save(fullfile(pathToSaveResults, 'workspace.mat'));
+
+disp(['[', datestr(now, datetimeFormat), ...
+    '] Done!'])
+
 % EOF
