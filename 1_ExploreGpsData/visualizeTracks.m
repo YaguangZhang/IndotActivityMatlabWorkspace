@@ -133,13 +133,13 @@ for idxField = 1:length(fieldsToGenNonZeroHistogram)
     axis tight; grid on; grid minor;
     xlabel([curField, ' s.t. ', char(curFctValidation)]);
     ylabel('Record Count (#)');
-    title(['min = ', num2str(min(curValData)), ...
-        ', MAX = ', num2str(max(curValData)), ...
-        '; # of ignored zero pts = ', num2str(numOfIgnoredZeroPts), ...
+    title({['min = ', num2str(min(curValData)), ...
+        ', MAX = ', num2str(max(curValData))], ...
+        ['# of ignored zero pts = ', num2str(numOfIgnoredZeroPts), ...
         ' (', num2str(numOfIgnoredZeroPts/numOfPts*100, '%.2f'), ...
-        '%), # of ignored too big pts = ', ...
+        '%)'], ['# of ignored too big pts = ', ...
         num2str(numOfTooBigPts), ' (', ...
-        num2str(numOfTooBigPts/numOfPts*100, '%.2f'), '%)']);
+        num2str(numOfTooBigPts/numOfPts*100, '%.2f'), '%)']});
 
     saveas(gcf, fullfile(pathToSaveResults, ...
         ['OverallStatistics_ValidValue_Histogram_', curField, '.jpg']));
@@ -192,8 +192,9 @@ dateTimesUtc = datetime(gpsLocTable.timestamp, 'TimeZone', 'UTC');
 dateTimesEst = dateTimesUtc;
 dateTimesEst.TimeZone = 'America/Indianapolis';
 
-% Sort GPS points into days;
-dayCnts = day(dateTimesEst - dateTimesEst(1));
+% Sort GPS points into days; counting from day 1.
+dayCnts = 1 + floor(days( ...
+    dateTimesEst - dateshift(dateTimesEst(1), 'start', 'day')));
 uniqueDayCnts = unique(dayCnts);
 numOfDays = length(uniqueDayCnts);
 
@@ -213,7 +214,7 @@ if ~exist(pathToSaveDailyTrackOverviewFigs, 'dir')
     mkdir(pathToSaveDailyTrackOverviewFigs)
 end
 % Indiana boundary as reference.
-[inBoundaryLatLons, ~, ~] = loadInBoundary;
+[inBoundaryLatLons, inBoundaryXYs, inBoundaryUtmZone] = loadInBoundary;
 
 for idxDay = 1:numOfDays
     curDayCnt = uniqueDayCnts(idxDay);
@@ -327,6 +328,26 @@ saveas(gcf, fullfile(pathToSaveDailyTrackOverviewFigs, ...
 disp(['[', datestr(now, datetimeFormat), ...
     '] Done!'])
 
+%% Inspect the Time Stamps
+
+disp(' ')
+disp(['[', datestr(now, datetimeFormat), ...
+    '] Calculating time stamps in hours past midnight each day ...'])
+
+timestampsInHPastMidnight = hours( ...
+    dateTimesEst - dateshift(dateTimesEst, 'start', 'day'));
+
+figure('Position', cdfAndHistFigPos); histogram(timestampsInHPastMidnight);
+xlim([0, 24]); axis tight; grid on; grid minor;
+xlabel(['Local Time After Midnight at ', dateTimesEst.TimeZone, ' (h)']);
+ylabel('Record Count (#)');
+
+saveas(gcf, fullfile(pathToSaveResults, ...
+    ['OverallStatistics_Histogram_', curField, '.jpg']));
+
+disp(['[', datestr(now, datetimeFormat), ...
+    '] Done!'])
+
 %% Calculate GPS Sampling Time
 
 disp(' ')
@@ -336,7 +357,6 @@ disp(['[', datestr(now, datetimeFormat), ...
 sampTimesInSEachDay = cell(numOfDays, 1);
 for idxDay = 1:numOfDays
     curNumOfVehs = length(unique(gpsLocTableDays{idxDay}.vehicleId));
-    hTrackLines = cell(curNumOfVehs, 1);
 
     curGpsDatetimeStamps = gpsDatetimeStampsEachDay{idxDay};
     curSampTimesInS = cell(curNumOfVehs, 1);
