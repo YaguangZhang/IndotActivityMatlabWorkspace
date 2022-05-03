@@ -112,7 +112,7 @@ end
 fieldsToGenNonZeroHistogram = {'speedkph', 'speedmph'};
 fctsValidation = {@(kph) kph>0&kph<150, ...
     @(mph) mph>0&mph<convlength(150, 'km', 'mi')};
-curFigPos = [0,0,1200,800];
+curFigPos = [0,0,630,420];
 for idxField = 1:length(fieldsToGenNonZeroHistogram)
     curField = fieldsToGenNonZeroHistogram{idxField};
     curData = gpsLocTable{:, curField};
