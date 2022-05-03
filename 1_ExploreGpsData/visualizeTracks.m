@@ -47,6 +47,9 @@ pathToGpsLocCsv = fullfile(pwd, '..', ...
 % Log the command line output.
 diary(fullfile(pathToSaveResults, 'Diary.log'));
 
+% For plotting.
+googleMapAlpha = 0.25;
+
 %% Load GPS Data
 
 disp(' ')
@@ -112,7 +115,7 @@ end
 fieldsToGenNonZeroHistogram = {'speedkph', 'speedmph'};
 fctsValidation = {@(kph) kph>0&kph<150, ...
     @(mph) mph>0&mph<convlength(150, 'km', 'mi')};
-curFigPos = [0,0,630,420];
+cdfAndHistFigPos = [0,0,630,420];
 for idxField = 1:length(fieldsToGenNonZeroHistogram)
     curField = fieldsToGenNonZeroHistogram{idxField};
     curData = gpsLocTable{:, curField};
@@ -126,7 +129,7 @@ for idxField = 1:length(fieldsToGenNonZeroHistogram)
     numOfPts = size(curData,1);
     numOfTooBigPts = numOfPts - size(curValData,1) - numOfIgnoredZeroPts;
 
-    figure('Position', curFigPos); histogram(curValData);
+    figure('Position', cdfAndHistFigPos); histogram(curValData);
     axis tight; grid on; grid minor;
     xlabel([curField, ' s.t. ', char(curFctValidation)]);
     ylabel('Record Count (#)');
@@ -141,7 +144,7 @@ for idxField = 1:length(fieldsToGenNonZeroHistogram)
     saveas(gcf, fullfile(pathToSaveResults, ...
         ['OverallStatistics_ValidValue_Histogram_', curField, '.jpg']));
 
-    figure('Position', curFigPos); ecdf(curValData);
+    figure('Position', cdfAndHistFigPos); ecdf(curValData);
     grid on; grid minor;
     xlabel([curField, ' s.t. ', char(curFctValidation)]);
     ylabel('Empirical CDF');
@@ -153,7 +156,7 @@ for idxField = 1:length(fieldsToGenNonZeroHistogram)
     curNonZeroInvalData = curData(~curFctValidation(curData));
     curNonZeroInvalData(curNonZeroInvalData==0) = [];
 
-    figure('Position', curFigPos); histogram(curNonZeroInvalData);
+    figure('Position', cdfAndHistFigPos); histogram(curNonZeroInvalData);
     axis tight; grid on; grid minor;
     xlabel([curField, ' s.t. ', char(curFctValidation)]);
     ylabel('Record Count (#)');
@@ -164,7 +167,7 @@ for idxField = 1:length(fieldsToGenNonZeroHistogram)
         ['OverallStatistics_NonZeroInvalidValue_Histogram_', ...
         curField, '.jpg']));
 
-    figure('Position', curFigPos); ecdf(curNonZeroInvalData);
+    figure('Position', cdfAndHistFigPos); ecdf(curNonZeroInvalData);
     grid on; grid minor;
     xlabel([curField, ' s.t. ', char(curFctValidation)]);
     ylabel('Empirical CDF');
@@ -244,7 +247,7 @@ set(gca, 'FontWeight', 'bold');
 plot(inBoundaryLatLons(:,2), inBoundaryLatLons(:,1), ...
     'k-', 'LineWidth', 3);
 xlabel('Longitude (degree)'); ylabel('Latitude (degree)');
-plot_google_map('MapType', 'road');
+plot_google_map('MapType', 'road', 'Alpha', googleMapAlpha);
 axis manual; axisToSetIn = axis;
 axisToSetIndianapolis ...
     = [-86.41144465, -85.91499717, 39.56458894, 39.96588788];
@@ -295,7 +298,7 @@ plot(inBoundaryLatLons(:,2), inBoundaryLatLons(:,1), ...
     'k-', 'LineWidth', 3);
 plot(gpsLonLatCoorsOutOfIn(:,1), gpsLonLatCoorsOutOfIn(:,2), 'r.');
 xlabel('Longitute'); ylabel('Latitude');
-plot_google_map('MapType', 'road');
+plot_google_map('MapType', 'road', 'Alpha', googleMapAlpha);
 title(['Total # of Samples Out of IN: ', ...
     num2str(size(gpsLonLatCoorsOutOfIn,1))]);
 
@@ -308,7 +311,7 @@ saveas(gcf, fullfile(pathToSaveDailyTrackOverviewFigs, ...
 axisToSetAtlanta ...
     = [-84.23889285, -84.22676274, 33.95715299, 33.96773302];
 axis(axisToSetAtlanta);
-plot_google_map('MapType', 'road');
+plot_google_map('MapType', 'road', 'Alpha', googleMapAlpha);
 
 title(['Total # of Potentially Anomaly Samples in This View: ', ...
     num2str(sum(InPolygon( ...
@@ -370,7 +373,7 @@ for idxField = 1:length(fieldsToGenStaFig)
     curData = eval(curField);
     curZoomXRange = zoomXRanges{idxField};
 
-    figure; histogram(curData);
+    figure('Position', cdfAndHistFigPos); histogram(curData);
     axis tight; grid on; grid minor;
     xlabel(curField);
     ylabel('Record Count (#)');
@@ -384,7 +387,7 @@ for idxField = 1:length(fieldsToGenStaFig)
     saveas(gcf, fullfile(pathToSaveResults, ...
         ['OverallStatistics_Histogram_', curField, '_ZoomedIn.jpg']));
 
-    figure; ecdf(curData);
+    figure('Position', cdfAndHistFigPos); ecdf(curData);
     grid on; grid minor;
     xlabel(curField);
     ylabel('Empirical CDF');
@@ -416,14 +419,14 @@ plot(inBoundaryLatLons(:,2), inBoundaryLatLons(:,1), ...
     'k-', 'LineWidth', 3);
 xlabel('Longitute'); ylabel('Latitude');
 
-curColomap = hot; curColomap = curColomap(end:-1:1, :);
+curColomap = autumn; curColomap = curColomap(end:-1:1, :);
 colormap(curColomap);
 maxSampTimeInMinForPlot3k = 10;
 overTimeSampColor = curColomap(end, :);
 lonLatTrackColor = 'b';
 colorbar;
 
-plot_google_map('MapType', 'road'); axis manual;
+plot_google_map('MapType', 'road', 'Alpha', googleMapAlpha); axis manual;
 for idxDay = 1:numOfDays
     [y,m,d] = ymd(gpsLocTableDays{idxDay}{1,'timestamp'});
     curFigTitle = ['Sampling Time for ', ...
@@ -441,8 +444,8 @@ for idxDay = 1:numOfDays
     for idxTrack = 1:curNumOfVehs
         hTrackLines{idxTrack} = plot( ...
             curGpsLonLatTracks{idxTrack}(:,1), ...
-            curGpsLonLatTracks{idxTrack}(:,2), '.-', ...
-            'MarkerSize', 9, 'Color', lonLatTrackColor);
+            curGpsLonLatTracks{idxTrack}(:,2), '-', ...
+            'Color', lonLatTrackColor, 'LineWidth', 1);
     end
 
     % Get rid of the first GPS loc for each track and merge the records.
@@ -467,10 +470,15 @@ for idxDay = 1:numOfDays
             curGpsLonLatToPlot(curBoolsOvertime, 1), ...
             curGpsLonLatToPlot(curBoolsOvertime, 2), ...
             maxSampTimeInMinForPlot3k.*ones(sum(curBoolsOvertime), 1), ...
-            'x', 'Color', overTimeSampColor, 'LineStyle', 'none');
+            'x', 'Color', overTimeSampColor, 'LineStyle', 'none', ...
+            'MarkerSize', 8, 'LineWidth', 1.1);
 
-        legend(hOverTimeRecords, ...
-            ['Over ', num2str(maxSampTimeInMinForPlot3k), ' min']);
+        legend([hOverTimeRecords, hTrackLines{1}], ...
+            ['Over ', num2str(maxSampTimeInMinForPlot3k), ' min'], ...
+            'Record Gap', ...
+            'Location', 'northwest');
+    else
+        legend(hTrackLines{1}, 'Record Gap', 'Location', 'northwest');
     end
 
     saveas(gcf, fullfile(pathToSaveDailyTrackOverviewFigs, ...
@@ -502,8 +510,8 @@ hTrackLines = cell(numOfVehs, 1);
 for idxTrack = 1:numOfVehs
     hTrackLines{idxTrack} = plot( ...
         gpsLonLatTracks{idxTrack}(:,1), ...
-        gpsLonLatTracks{idxTrack}(:,2), '.-', ...
-        'MarkerSize', 9, 'Color', lonLatTrackColor);
+        gpsLonLatTracks{idxTrack}(:,2), '-', ...
+        'Color', lonLatTrackColor, 'LineWidth', 1);
 end
 
 title('All GPS Tracks');
@@ -523,10 +531,15 @@ if any(boolsOvertime)
         gpsLonLatToPlot(boolsOvertime, 1), ...
         gpsLonLatToPlot(boolsOvertime, 2), ...
         maxSampTimeInMinForPlot3k.*ones(sum(boolsOvertime), 1), ...
-        'x', 'Color', overTimeSampColor, 'LineStyle', 'none');
+        'x', 'Color', overTimeSampColor, 'LineStyle', 'none', ...
+        'MarkerSize', 8, 'LineWidth', 1.1);
 
-    legend(hOverTimeRecords, ...
-        ['Over ', num2str(maxSampTimeInMinForPlot3k), ' min']);
+    legend([hOverTimeRecords, hTrackLines{1}], ...
+        ['Over ', num2str(maxSampTimeInMinForPlot3k), ' min'], ...
+        'Record Gap', ...
+        'Location', 'northwest');
+else
+    legend(hTrackLines{1}, 'Record Gap', 'Location', 'northwest');
 end
 
 saveas(gcf, fullfile(pathToSaveDailyTrackOverviewFigs, ...
