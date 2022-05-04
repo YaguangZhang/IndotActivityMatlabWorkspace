@@ -213,6 +213,8 @@ gpsLocTableDays = cell(numOfDays, 1);
 gpsLonLatTracksEachDay = cell(numOfDays, 1);
 % Also fetch the time stamps (stored as datetime) for the GPS samples.
 gpsDatetimeStampsEachDay = cell(numOfDays, 1);
+% Divide the complete table into tracks, too, for debugging purposes.
+gpsLocTableEachDay = cell(numOfDays, 1);
 % The absolute path to save daily track overview figures.
 pathToSaveDailyTrackOverviewFigs = fullfile(pathToSaveResults, ...
     'DailyTrackOverviews');
@@ -231,18 +233,21 @@ for idxDay = 1:numOfDays
     curUniqueVehIds = unique(curVehIds);
     curNumOfVehs = length(curUniqueVehIds);
 
-    curGpsLonLatTracks = cell(curNumOfVehs, 1);
-    curGpsDatetimeStamps = cell(curNumOfVehs, 1);
+    [curGpsLonLatTracks, curGpsDatetimeStamps, curGpsLocTable] ...
+        = deal(cell(curNumOfVehs, 1));
     for idxTrack = 1:curNumOfVehs
         curVehId = curUniqueVehIds(idxTrack);
         curGpsLonLatTracks{idxTrack} = gpsLocTableDays{idxDay}{ ...
             curVehIds == curVehId, {'geo_Long', 'geo_Lat'}};
         curGpsDatetimeStamps{idxTrack} = gpsLocTableDays{idxDay}{ ...
             curVehIds == curVehId, {'timestamp'}};
+        curGpsLocTable{idxTrack} ...
+            = gpsLocTableDays{idxDay}(curVehIds == curVehId,:);
     end
 
     gpsLonLatTracksEachDay{idxDay} = curGpsLonLatTracks;
     gpsDatetimeStampsEachDay{idxDay} = curGpsDatetimeStamps;
+    gpsLocTableEachDay{idxDay} = curGpsLocTable;
 end
 
 disp(['    [', datestr(now, datetimeFormat), ...
@@ -252,7 +257,7 @@ disp(['    [', datestr(now, datetimeFormat), ...
 figure('Visible', ~FLAG_SILENT_FIGS, 'Position', [0,0,800,800]); hold on;
 set(gca, 'FontWeight', 'bold');
 plot(inBoundaryLatLons(:,2), inBoundaryLatLons(:,1), ...
-    ':', 'LineWidth', 3, 'Color', inBoundColor);
+    '-', 'LineWidth', 3, 'Color', inBoundColor);
 xlabel('Longitude (degree)'); ylabel('Latitude (degree)');
 plot_google_map('MapType', 'road', 'Alpha', googleMapAlpha);
 axis manual; axisToSetIn = axis;
@@ -302,7 +307,7 @@ gpsLonLatCoorsOutOfIn = gpsLonLatCoors(boolsGpsLonLatCoorsOutOfIn, :);
 
 figure('Visible', ~FLAG_SILENT_FIGS, 'Position', [0,0,800,800]); hold on;
 plot(inBoundaryLatLons(:,2), inBoundaryLatLons(:,1), ...
-    ':', 'LineWidth', 3, 'Color', inBoundColor);
+    '-', 'LineWidth', 3, 'Color', inBoundColor);
 plot(gpsLonLatCoorsOutOfIn(:,1), gpsLonLatCoorsOutOfIn(:,2), 'r.');
 xlabel('Longitute'); ylabel('Latitude');
 plot_google_map('MapType', 'road', 'Alpha', googleMapAlpha);
@@ -446,7 +451,7 @@ disp(['[', datestr(now, datetimeFormat), ...
 % Reuse background graphics.
 figure('Visible', ~FLAG_SILENT_FIGS, 'Position', [0,0,800,800]); hold on;
 plot(inBoundaryLatLons(:,2), inBoundaryLatLons(:,1), ...
-    ':', 'LineWidth', 3, 'Color', inBoundColor);
+    '-', 'LineWidth', 3, 'Color', inBoundColor);
 xlabel('Longitute'); ylabel('Latitude');
 
 curColomap = turbo; % autumn; curColomap = curColomap(end:-1:1, :);
@@ -458,14 +463,15 @@ lonLatTrackColor = 'k';
 colorbar;
 
 plot_google_map('MapType', 'road', 'Alpha', googleMapAlpha); axis manual;
+
+curXLabel = 'Longitude (degree)';
+curYLabel = 'Latitude (degree)';
+curZLabel = '';
+curPlot3kCbLabel = 'Sampling Time (min)';
 for idxDay = 1:numOfDays
     [y,m,d] = ymd(gpsLocTableDays{idxDay}{1,'timestamp'});
     curFigTitle = ['Sampling Time for ', ...
         num2str(m), '/', num2str(d), '/', num2str(y)];
-    curXLabel = 'Longitude (degree)';
-    curYLabel = 'Latitude (degree)';
-    curZLabel = '';
-    curPlot3kCbLabel = 'Sampling Time (min)';
 
     % For plotting the tracks as background.
     curNumOfVehs = length(unique(gpsLocTableDays{idxDay}.vehicleId));
@@ -662,7 +668,7 @@ saveas(gcf, fullfile(pathToSaveDailyTrackOverviewFigs, ...
 view(3);
 if any(boolsOvertime)
     legend([hOverTimeRecords, hTrackLines{1}], ...
-        ['Over ', num2str(maxSampTimeInMinForPlot3kLower), ' min'], ...
+        ['Over ', num2str(maxSampTimeInMinForPlot3k), ' min'], ...
         'GPS Tracks', ...
         'Location', 'northwest');
 else
@@ -723,18 +729,101 @@ end
 saveas(gcf, fullfile(pathToSaveDailyTrackOverviewFigs, ...
     'SampTimeInS_Overview_SmallerCRange_3D.jpg'));
 
-% % Density map for over time records.
-%
-% % For GPS and UTM conversions. [deg2utm_speZone, utm2deg_speZone] ...
-%     = genUtmConvertersForFixedZone(inBoundaryUtmZone);
-%
-% saveas(gcf, fullfile(pathToSaveDailyTrackOverviewFigs, ...
-%     ['OverTimeSampTimeDensity_', ... num2str(maxSampTimeInMinForPlot3k),
-%     'min.jpg']));
-%
-% saveas(gcf, fullfile(pathToSaveDailyTrackOverviewFigs, ...
-%     ['OverTimeSampTimeDensity_', ...
-%     num2str(maxSampTimeInMinForPlot3kLower), 'min.jpg']));
+disp(['[', datestr(now, datetimeFormat), ...
+    '] Done!'])
+
+%% Estimate Over-Time GPS Sample Density
+
+disp(' ')
+disp(['[', datestr(now, datetimeFormat), ...
+    '] Estimating the density of over-time GPS samples ...'])
+
+simConfigs.NUM_OF_PIXELS_FOR_LONGER_SIDE = 100;
+% For GPS and UTM conversions.
+[simConfigs.deg2utm_speZone, simConfigs.utm2deg_speZone] ...
+    = genUtmConvertersForFixedZone(inBoundaryUtmZone);
+
+[gpsXsToPlot, gpsYsToPlot] = simConfigs.deg2utm_speZone( ...
+    gpsLonLatToPlot(:,2), gpsLonLatToPlot(:,1));
+gpsXYToPlot = [gpsXsToPlot, gpsYsToPlot];
+overTimeSampXYs = gpsXYToPlot(boolsOvertime, :);
+overTimeSampSXYs = gpsXYToPlot(boolsOvertimeS, :);
+
+
+% Grid for density values.
+inGridXYPts = buildSimGrid(inBoundaryXYs, ...
+    simConfigs.NUM_OF_PIXELS_FOR_LONGER_SIDE);
+numGridPts = size(inGridXYPts, 1);
+[inGridLats, inGridLons] ...
+    = simConfigs.utm2deg_speZone(inGridXYPts(:,1), inGridXYPts(:,2));
+inGridLatLons = [inGridLats, inGridLons];
+
+% Reuse map background.
+figure('Visible', ~FLAG_SILENT_FIGS, 'Position', [0,0,800,800]);
+hold on;
+plot(inBoundaryLatLons(:,2), inBoundaryLatLons(:,1), ...
+    '-', 'LineWidth', 3, 'Color', inBoundColor);
+plot_google_map('MapType', 'road', 'Alpha', googleMapAlpha);
+axis manual; curColomap = autumn; curColomap = curColomap(end:-1:1, :);
+colormap(curColomap);
+
+radiiToInspectInM = [1000, 5000, 10000, 20000, 50000];
+for RADIUS_TO_INSPECT_IN_M = radiiToInspectInM
+    [overTimeSampDenNPerSqKms, overTimeSampSDenNPerSqKms] ...
+        = deal(nan(numGridPts,1));
+    areaToInspectInSqKm = pi*(RADIUS_TO_INSPECT_IN_M/1000)^2;
+    for idxGridPt = 1:numGridPts
+        curGridXY = inGridXYPts(idxGridPt,:);
+        overTimeSampDists = pdist2(curGridXY, ...
+            overTimeSampXYs(:,1:2), 'euclidean');
+        overTimeSampSDists = pdist2(curGridXY, ...
+            overTimeSampSXYs(:,1:2), 'euclidean');
+
+        overTimeSampDenNPerSqKms(idxGridPt) = ...
+            sum(overTimeSampDists<=RADIUS_TO_INSPECT_IN_M) ...
+            /areaToInspectInSqKm;
+        overTimeSampSDenNPerSqKms(idxGridPt) = ...
+            sum(overTimeSampSDists<=RADIUS_TO_INSPECT_IN_M) ...
+            /areaToInspectInSqKm;
+    end
+
+    maxOverTimeSampDen = max(overTimeSampDenNPerSqKms);
+    maxOverTimeSampSDen = max(overTimeSampSDenNPerSqKms);
+
+    % Density map for over-time records.
+    curXLabel = 'Longitude (degree)';
+    curYLabel = 'Latitude (degree)';
+    curZLabel = '';
+    curPlot3kCbLabel = 'Sample Density (# per km^2)';
+
+    curFigTitle = {['Over-Time GPS Sample Density (Over ', ...
+        num2str(maxSampTimeInMinForPlot3k), ' min)'], ...
+        ['Inspection Range = ', ...
+        num2str(RADIUS_TO_INSPECT_IN_M/1000), ' km']};
+    plot3k([inGridLatLons(:,2:-1:1), overTimeSampDenNPerSqKms], ...
+        'ColorRange', [0, maxOverTimeSampDen], 'Labels', ...
+        {curFigTitle, curXLabel, curYLabel, curZLabel, curPlot3kCbLabel});
+    view(2); zlim([0, maxOverTimeSampDen]);
+
+    saveas(gcf, fullfile(pathToSaveDailyTrackOverviewFigs, ...
+        ['OverTimeSampTimeDensity_', ...
+        num2str(RADIUS_TO_INSPECT_IN_M/1000), ...
+        'km_', num2str(maxSampTimeInMinForPlot3k), 'min.jpg']));
+
+    curFigTitle = {['Over-Time GPS Sample Density (Over ', ...
+        num2str(maxSampTimeInMinForPlot3kLower), ' min)'], ...
+        ['Inspection Range = ', ...
+        num2str(RADIUS_TO_INSPECT_IN_M/1000), ' km']};
+    plot3k([inGridLatLons(:,2:-1:1), overTimeSampSDenNPerSqKms], ...
+        'ColorRange', [0, maxOverTimeSampSDen], 'Labels', ...
+        {curFigTitle, curXLabel, curYLabel, curZLabel, curPlot3kCbLabel});
+    view(2); zlim([0, maxOverTimeSampSDen]);
+
+    saveas(gcf, fullfile(pathToSaveDailyTrackOverviewFigs, ...
+        ['OverTimeSampTimeDensity_', ...
+        num2str(RADIUS_TO_INSPECT_IN_M/1000), ...
+        'km_', num2str(maxSampTimeInMinForPlot3kLower), 'min.jpg']));
+end
 
 disp(['[', datestr(now, datetimeFormat), ...
     '] Done!'])
