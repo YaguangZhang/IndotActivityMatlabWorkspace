@@ -49,6 +49,8 @@ diary(fullfile(pathToSaveResults, 'Diary.log'));
 
 % For plotting.
 googleMapAlpha = 0.25;
+FLAG_SILENT_FIGS = true;
+inBoundColor = [0, 0, 0, googleMapAlpha];
 
 %% Load GPS Data
 
@@ -79,7 +81,7 @@ for idxField = 1:length(fieldsToGenFilteredHistogram)
     curData = gpsLocTable{:, curField};
     curZoomXRange = zoomXRanges{idxField};
 
-    figure; histogram(curData);
+    figure('Visible', ~FLAG_SILENT_FIGS); histogram(curData);
     axis tight; grid on; grid minor;
     xlabel(curField);
     ylabel('Record Count (#)');
@@ -95,7 +97,7 @@ for idxField = 1:length(fieldsToGenFilteredHistogram)
             ['OverallStatistics_Histogram_', curField, '_ZoomedIn.jpg']));
     end
 
-    figure; ecdf(curData);
+    figure('Visible', ~FLAG_SILENT_FIGS); ecdf(curData);
     grid on; grid minor;
     xlabel(curField);
     ylabel('Empirical CDF');
@@ -129,7 +131,8 @@ for idxField = 1:length(fieldsToGenNonZeroHistogram)
     numOfPts = size(curData,1);
     numOfTooBigPts = numOfPts - size(curValData,1) - numOfIgnoredZeroPts;
 
-    figure('Position', cdfAndHistFigPos); histogram(curValData);
+    figure('Visible', ~FLAG_SILENT_FIGS, 'Position', cdfAndHistFigPos);
+    histogram(curValData);
     axis tight; grid on; grid minor;
     xlabel([curField, ' s.t. ', char(curFctValidation)]);
     ylabel('Record Count (#)');
@@ -144,7 +147,8 @@ for idxField = 1:length(fieldsToGenNonZeroHistogram)
     saveas(gcf, fullfile(pathToSaveResults, ...
         ['OverallStatistics_ValidValue_Histogram_', curField, '.jpg']));
 
-    figure('Position', cdfAndHistFigPos); ecdf(curValData);
+    figure('Visible', ~FLAG_SILENT_FIGS, 'Position', cdfAndHistFigPos);
+    ecdf(curValData);
     grid on; grid minor;
     xlabel([curField, ' s.t. ', char(curFctValidation)]);
     ylabel('Empirical CDF');
@@ -156,7 +160,8 @@ for idxField = 1:length(fieldsToGenNonZeroHistogram)
     curNonZeroInvalData = curData(~curFctValidation(curData));
     curNonZeroInvalData(curNonZeroInvalData==0) = [];
 
-    figure('Position', cdfAndHistFigPos); histogram(curNonZeroInvalData);
+    figure('Visible', ~FLAG_SILENT_FIGS, 'Position', cdfAndHistFigPos);
+    histogram(curNonZeroInvalData);
     axis tight; grid on; grid minor;
     xlabel([curField, ' s.t. ', char(curFctValidation)]);
     ylabel('Record Count (#)');
@@ -167,7 +172,8 @@ for idxField = 1:length(fieldsToGenNonZeroHistogram)
         ['OverallStatistics_NonZeroInvalidValue_Histogram_', ...
         curField, '.jpg']));
 
-    figure('Position', cdfAndHistFigPos); ecdf(curNonZeroInvalData);
+    figure('Visible', ~FLAG_SILENT_FIGS, 'Position', cdfAndHistFigPos);
+    ecdf(curNonZeroInvalData);
     grid on; grid minor;
     xlabel([curField, ' s.t. ', char(curFctValidation)]);
     ylabel('Empirical CDF');
@@ -243,10 +249,10 @@ disp(['    [', datestr(now, datetimeFormat), ...
     '] Generating overview maps for tracks on each day ...'])
 
 % Reuse background graphics.
-figure('Position', [0,0,800,800]); hold on;
+figure('Visible', ~FLAG_SILENT_FIGS, 'Position', [0,0,800,800]); hold on;
 set(gca, 'FontWeight', 'bold');
 plot(inBoundaryLatLons(:,2), inBoundaryLatLons(:,1), ...
-    'k-', 'LineWidth', 3);
+    ':', 'LineWidth', 3, 'Color', inBoundColor);
 xlabel('Longitude (degree)'); ylabel('Latitude (degree)');
 plot_google_map('MapType', 'road', 'Alpha', googleMapAlpha);
 axis manual; axisToSetIn = axis;
@@ -294,9 +300,9 @@ boolsGpsLonLatCoorsOutOfIn = ~inpoly2(gpsLonLatCoors, ...
 
 gpsLonLatCoorsOutOfIn = gpsLonLatCoors(boolsGpsLonLatCoorsOutOfIn, :);
 
-figure('Position', [0,0,800,800]); hold on;
+figure('Visible', ~FLAG_SILENT_FIGS, 'Position', [0,0,800,800]); hold on;
 plot(inBoundaryLatLons(:,2), inBoundaryLatLons(:,1), ...
-    'k-', 'LineWidth', 3);
+    ':', 'LineWidth', 3, 'Color', inBoundColor);
 plot(gpsLonLatCoorsOutOfIn(:,1), gpsLonLatCoorsOutOfIn(:,2), 'r.');
 xlabel('Longitute'); ylabel('Latitude');
 plot_google_map('MapType', 'road', 'Alpha', googleMapAlpha);
@@ -337,7 +343,8 @@ disp(['[', datestr(now, datetimeFormat), ...
 timestampsInHPastMidnight = hours( ...
     dateTimesEst - dateshift(dateTimesEst, 'start', 'day'));
 
-figure('Position', cdfAndHistFigPos); histogram(timestampsInHPastMidnight);
+figure('Visible', ~FLAG_SILENT_FIGS, 'Position', cdfAndHistFigPos);
+histogram(timestampsInHPastMidnight);
 xlim([0, 24]); axis tight; grid on; grid minor;
 xlabel(['Local Time After Midnight at ', dateTimesEst.TimeZone, ' (h)']);
 ylabel('Record Count (#)');
@@ -393,7 +400,8 @@ for idxField = 1:length(fieldsToGenStaFig)
     curData = eval(curField);
     curZoomXRange = zoomXRanges{idxField};
 
-    figure('Position', cdfAndHistFigPos); histogram(curData);
+    figure('Visible', ~FLAG_SILENT_FIGS, 'Position', cdfAndHistFigPos);
+    histogram(curData);
     axis tight; grid on; grid minor;
     xlabel(curField);
     ylabel('Record Count (#)');
@@ -407,7 +415,8 @@ for idxField = 1:length(fieldsToGenStaFig)
     saveas(gcf, fullfile(pathToSaveResults, ...
         ['OverallStatistics_Histogram_', curField, '_ZoomedIn.jpg']));
 
-    figure('Position', cdfAndHistFigPos); ecdf(curData);
+    figure('Visible', ~FLAG_SILENT_FIGS, 'Position', cdfAndHistFigPos);
+    ecdf(curData);
     grid on; grid minor;
     xlabel(curField);
     ylabel('Empirical CDF');
@@ -430,20 +439,22 @@ disp(['[', datestr(now, datetimeFormat), ...
     '] Showing sampling time on map for tracks on each day ...'])
 
 % For the overview plot.
-[gpsLonLatTracks, gpsLonLatToPlot, sampTimesInMinToPlot, boolsOvertime] ...
+[gpsLonLatTracks, gpsLonLatToPlot, sampTimesInMinToPlot, ...
+    boolsOvertime, boolsOvertimeS] ...
     = deal(cell(numOfDays, 1));
 
 % Reuse background graphics.
-figure('Position', [0,0,800,800]); hold on;
+figure('Visible', ~FLAG_SILENT_FIGS, 'Position', [0,0,800,800]); hold on;
 plot(inBoundaryLatLons(:,2), inBoundaryLatLons(:,1), ...
-    'k-', 'LineWidth', 3);
+    ':', 'LineWidth', 3, 'Color', inBoundColor);
 xlabel('Longitute'); ylabel('Latitude');
 
-curColomap = autumn; curColomap = curColomap(end:-1:1, :);
+curColomap = turbo; % autumn; curColomap = curColomap(end:-1:1, :);
 colormap(curColomap);
 maxSampTimeInMinForPlot3k = 10;
+maxSampTimeInMinForPlot3kLower = 3;
 overTimeSampColor = curColomap(end, :);
-lonLatTrackColor = 'b';
+lonLatTrackColor = 'k';
 colorbar;
 
 plot_google_map('MapType', 'road', 'Alpha', googleMapAlpha); axis manual;
@@ -479,11 +490,17 @@ for idxDay = 1:numOfDays
     curSampTimesInMinToPlot = vertcat(curSampTimesInMinToPlot{:})./60;
 
     curBoolsOvertime = curSampTimesInMinToPlot>maxSampTimeInMinForPlot3k;
-    plot3k([curGpsLonLatToPlot(~curBoolsOvertime, :), ...
+    [~,~,hCb] = plot3k([curGpsLonLatToPlot(~curBoolsOvertime, :), ...
         curSampTimesInMinToPlot(~curBoolsOvertime)], ...
         'ColorRange', [0, maxSampTimeInMinForPlot3k], 'Labels', ...
         {curFigTitle, curXLabel, curYLabel, curZLabel, curPlot3kCbLabel});
     view(2); zlim([0, maxSampTimeInMinForPlot3k]);
+    curMaxTickLabel = hCb.TickLabels{end};
+    idxSpaceToReplace = find(isspace(curMaxTickLabel), 1, 'last');
+    maxTickLabelToSet ...
+        = [curMaxTickLabel(1:(idxSpaceToReplace-1)), '\geq', ...
+        curMaxTickLabel((idxSpaceToReplace+1):end)];
+    hCb.TickLabels{end} = maxTickLabelToSet;
 
     if any(curBoolsOvertime)
         hOverTimeRecords = plot3( ...
@@ -504,12 +521,83 @@ for idxDay = 1:numOfDays
     saveas(gcf, fullfile(pathToSaveDailyTrackOverviewFigs, ...
         ['SampTimeInS_Date_', ...
         num2str(y), '_', num2str(m), '_', num2str(d), '.jpg']));
+    view(3);
+    if any(curBoolsOvertime)
+        legend([hOverTimeRecords, hTrackLines{1}], ...
+            ['Over ', num2str(maxSampTimeInMinForPlot3kLower), ' min'], ...
+            'GPS Tracks', ...
+            'Location', 'northwest');
+    else
+        legend(hTrackLines{1}, 'GPS Tracks', 'Location', 'northwest');
+    end
+    saveas(gcf, fullfile(pathToSaveDailyTrackOverviewFigs, ...
+        ['SampTimeInS_Date_', ...
+        num2str(y), '_', num2str(m), '_', num2str(d), '_3D.jpg']));
+
+    % Delete current figure objects.
+    hSampTimePlot3k = findobj(gca,'tag','plot3k');
+    delete(hSampTimePlot3k);
+    % delete([hTrackLines{:}]);
+    if any(curBoolsOvertime)
+        delete(hOverTimeRecords);
+    end
+    legend off;
+
+    % Repeat the plot with a slower upper bound.
+    curBoolsOvertimeS ...
+        = curSampTimesInMinToPlot>maxSampTimeInMinForPlot3kLower;
+    [~,~,hCb] = plot3k([curGpsLonLatToPlot(~curBoolsOvertimeS, :), ...
+        curSampTimesInMinToPlot(~curBoolsOvertimeS)], ...
+        'ColorRange', [0, maxSampTimeInMinForPlot3kLower], 'Labels', ...
+        {curFigTitle, curXLabel, curYLabel, curZLabel, curPlot3kCbLabel});
+    view(2); zlim([0, maxSampTimeInMinForPlot3kLower]);
+    curMaxTickLabel = hCb.TickLabels{end};
+    idxSpaceToReplace = find(isspace(curMaxTickLabel), 1, 'last');
+    maxTickLabelToSet ...
+        = [curMaxTickLabel(1:(idxSpaceToReplace-1)), '\geq', ...
+        curMaxTickLabel((idxSpaceToReplace+1):end)];
+    hCb.TickLabels{end} = maxTickLabelToSet;
+
+    if any(curBoolsOvertimeS)
+        hOverTimeRecords = plot3( ...
+            curGpsLonLatToPlot(curBoolsOvertimeS, 1), ...
+            curGpsLonLatToPlot(curBoolsOvertimeS, 2), ...
+            maxSampTimeInMinForPlot3kLower...
+            .*ones(sum(curBoolsOvertimeS), 1), ...
+            'x', 'Color', overTimeSampColor, 'LineStyle', 'none', ...
+            'MarkerSize', 8, 'LineWidth', 1.1);
+
+        legend([hOverTimeRecords, hTrackLines{1}], ...
+            ['Over ', num2str(maxSampTimeInMinForPlot3kLower), ' min'], ...
+            'Record Gap', ...
+            'Location', 'northwest');
+    else
+        legend(hTrackLines{1}, 'Record Gap', 'Location', 'northwest');
+    end
+
+    saveas(gcf, fullfile(pathToSaveDailyTrackOverviewFigs, ...
+        ['SampTimeInS_Date_', ...
+        num2str(y), '_', num2str(m), '_', num2str(d), ...
+        '_SmallerCRange.jpg']));
+    view(3);
+    if any(curBoolsOvertimeS)
+        legend([hOverTimeRecords, hTrackLines{1}], ...
+            ['Over ', num2str(maxSampTimeInMinForPlot3kLower), ' min'], ...
+            'GPS Tracks', ...
+            'Location', 'northwest');
+    else
+        legend(hTrackLines{1}, 'GPS Tracks', 'Location', 'northwest');
+    end
+    saveas(gcf, fullfile(pathToSaveDailyTrackOverviewFigs, ...
+        ['SampTimeInS_Date_', ...
+        num2str(y), '_', num2str(m), '_', num2str(d), ...
+        '_SmallerCRange_3D.jpg']));
 
     % Delete current figure objects.
     hSampTimePlot3k = findobj(gca,'tag','plot3k');
     delete(hSampTimePlot3k);
     delete([hTrackLines{:}]);
-    if any(curBoolsOvertime)
+    if any(curBoolsOvertimeS)
         delete(hOverTimeRecords);
     end
     legend off;
@@ -518,12 +606,14 @@ for idxDay = 1:numOfDays
     gpsLonLatToPlot{idxDay} = curGpsLonLatToPlot;
     sampTimesInMinToPlot{idxDay} = curSampTimesInMinToPlot;
     boolsOvertime{idxDay} = curBoolsOvertime;
+    boolsOvertimeS{idxDay} = curBoolsOvertimeS;
 end
 
 gpsLonLatTracks = vertcat(gpsLonLatTracks{:});
 gpsLonLatToPlot = vertcat(gpsLonLatToPlot{:});
 sampTimesInMinToPlot = vertcat(sampTimesInMinToPlot{:});
 boolsOvertime = logical(vertcat(boolsOvertime{:}));
+boolsOvertimeS = logical(vertcat(boolsOvertimeS{:}));
 
 numOfVehs = length(gpsLonLatTracks);
 hTrackLines = cell(numOfVehs, 1);
@@ -534,17 +624,22 @@ for idxTrack = 1:numOfVehs
         'Color', lonLatTrackColor, 'LineWidth', 1);
 end
 
-title('All GPS Tracks');
+title('All GPS Tracks'); view(2);
 set(colorbar,'visible','off');
 saveas(gcf, fullfile(pathToSaveDailyTrackOverviewFigs, ...
     'SampTimeInS_Overview_TracksOnly.jpg'));
 
 curFigTitle = 'Sampling Time for All Dates';
-plot3k([gpsLonLatToPlot(~boolsOvertime, :), ...
+[~,~,hCb] = plot3k([gpsLonLatToPlot(~boolsOvertime, :), ...
     sampTimesInMinToPlot(~boolsOvertime)], ...
     'ColorRange', [0, maxSampTimeInMinForPlot3k], 'Labels', ...
     {curFigTitle, curXLabel, curYLabel, curZLabel, curPlot3kCbLabel});
 view(2); zlim([0, maxSampTimeInMinForPlot3k]);
+curMaxTickLabel = hCb.TickLabels{end};
+idxSpaceToReplace = find(isspace(curMaxTickLabel), 1, 'last');
+maxTickLabelToSet = [curMaxTickLabel(1:(idxSpaceToReplace-1)), '\geq', ...
+    curMaxTickLabel((idxSpaceToReplace+1):end)];
+hCb.TickLabels{end} = maxTickLabelToSet;
 
 if any(boolsOvertime)
     hOverTimeRecords = plot3( ...
@@ -564,6 +659,82 @@ end
 
 saveas(gcf, fullfile(pathToSaveDailyTrackOverviewFigs, ...
     'SampTimeInS_Overview.jpg'));
+view(3);
+if any(boolsOvertime)
+    legend([hOverTimeRecords, hTrackLines{1}], ...
+        ['Over ', num2str(maxSampTimeInMinForPlot3kLower), ' min'], ...
+        'GPS Tracks', ...
+        'Location', 'northwest');
+else
+    legend(hTrackLines{1}, 'GPS Tracks', 'Location', 'northwest');
+end
+saveas(gcf, fullfile(pathToSaveDailyTrackOverviewFigs, ...
+    'SampTimeInS_Overview_3D.jpg'));
+
+% Delete current figure objects.
+hSampTimePlot3k = findobj(gca,'tag','plot3k');
+delete(hSampTimePlot3k);
+% delete([hTrackLines{:}]);
+if any(curBoolsOvertime)
+    delete(hOverTimeRecords);
+end
+legend off;
+
+% Repeat the plot with a slower upper bound.
+curFigTitle = 'Sampling Time for All Dates';
+[~,~,hCb] = plot3k([gpsLonLatToPlot(~boolsOvertimeS, :), ...
+    sampTimesInMinToPlot(~boolsOvertimeS)], ...
+    'ColorRange', [0, maxSampTimeInMinForPlot3kLower], 'Labels', ...
+    {curFigTitle, curXLabel, curYLabel, curZLabel, curPlot3kCbLabel});
+view(2); zlim([0, maxSampTimeInMinForPlot3kLower]);
+curMaxTickLabel = hCb.TickLabels{end};
+idxSpaceToReplace = find(isspace(curMaxTickLabel), 1, 'last');
+maxTickLabelToSet = [curMaxTickLabel(1:(idxSpaceToReplace-1)), '\geq', ...
+    curMaxTickLabel((idxSpaceToReplace+1):end)];
+hCb.TickLabels{end} = maxTickLabelToSet;
+
+if any(boolsOvertimeS)
+    hOverTimeRecords = plot3( ...
+        gpsLonLatToPlot(boolsOvertimeS, 1), ...
+        gpsLonLatToPlot(boolsOvertimeS, 2), ...
+        maxSampTimeInMinForPlot3kLower.*ones(sum(boolsOvertimeS), 1), ...
+        'x', 'Color', overTimeSampColor, 'LineStyle', 'none', ...
+        'MarkerSize', 8, 'LineWidth', 1.1);
+
+    legend([hOverTimeRecords, hTrackLines{1}], ...
+        ['Over ', num2str(maxSampTimeInMinForPlot3kLower), ' min'], ...
+        'Record Gap', ...
+        'Location', 'northwest');
+else
+    legend(hTrackLines{1}, 'Record Gap', 'Location', 'northwest');
+end
+
+saveas(gcf, fullfile(pathToSaveDailyTrackOverviewFigs, ...
+    'SampTimeInS_Overview_SmallerCRange.jpg'));
+view(3);
+if any(boolsOvertimeS)
+    legend([hOverTimeRecords, hTrackLines{1}], ...
+        ['Over ', num2str(maxSampTimeInMinForPlot3kLower), ' min'], ...
+        'GPS Tracks', ...
+        'Location', 'northwest');
+else
+    legend(hTrackLines{1}, 'GPS Tracks', 'Location', 'northwest');
+end
+saveas(gcf, fullfile(pathToSaveDailyTrackOverviewFigs, ...
+    'SampTimeInS_Overview_SmallerCRange_3D.jpg'));
+
+% % Density map for over time records.
+%
+% % For GPS and UTM conversions. [deg2utm_speZone, utm2deg_speZone] ...
+%     = genUtmConvertersForFixedZone(inBoundaryUtmZone);
+%
+% saveas(gcf, fullfile(pathToSaveDailyTrackOverviewFigs, ...
+%     ['OverTimeSampTimeDensity_', ... num2str(maxSampTimeInMinForPlot3k),
+%     'min.jpg']));
+%
+% saveas(gcf, fullfile(pathToSaveDailyTrackOverviewFigs, ...
+%     ['OverTimeSampTimeDensity_', ...
+%     num2str(maxSampTimeInMinForPlot3kLower), 'min.jpg']));
 
 disp(['[', datestr(now, datetimeFormat), ...
     '] Done!'])
