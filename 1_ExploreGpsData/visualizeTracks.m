@@ -192,11 +192,12 @@ disp(' ')
 disp(['[', datestr(now, datetimeFormat), ...
     '] Organizing GPS points into tracks ...'])
 
+LOCAL_TIME_ZONE = 'America/Indianapolis';
 % UTC time stamps.
 dateTimesUtc = datetime(gpsLocTable.timestamp, 'TimeZone', 'UTC');
 % Local time stamps.
 dateTimesEst = dateTimesUtc;
-dateTimesEst.TimeZone = 'America/Indianapolis';
+dateTimesEst.TimeZone = LOCAL_TIME_ZONE;
 
 % Sort GPS points into days; counting from day 1.
 dayCnts = 1 + floor(days( ...
@@ -209,11 +210,11 @@ numOfDays = length(uniqueDayCnts);
 gpsLocTableDays = cell(numOfDays, 1);
 % Break each day's record into tracks. Each element will be a column cell
 % of tracks. Each track will be a Nx2 (lon, lat) matrix, where N is the
-% number of GPS locs for that track.
-gpsLonLatTracksEachDay = cell(numOfDays, 1);
-% Also fetch the time stamps (stored as datetime) for the GPS samples.
-gpsDatetimeStampsEachDay = cell(numOfDays, 1);
-% Divide the complete table into tracks, too, for debugging purposes.
+% number of GPS locs for that track. Also fetch the time stamps (stored in
+% local time as datetime objects) for the GPS samples and the vehicle IDs.
+[gpsLonLatTracksEachDay, gpsDatetimeStampsEachDay, vehIdsEachDay] ...
+    = deal(cell(numOfDays, 1));
+% Divide the complete table into tracks, too.
 gpsLocTableEachDay = cell(numOfDays, 1);
 % The absolute path to save daily track overview figures.
 pathToSaveDailyTrackOverviewFigs = fullfile(pathToSaveResults, ...
@@ -229,24 +230,32 @@ for idxDay = 1:numOfDays
     gpsLocTableDays{idxDay} = sortrows( ...
         gpsLocTable(dayCnts==curDayCnt, :), {'vehicleId', 'timestamp'});
 
-    curVehIds = gpsLocTableDays{idxDay}.vehicleId;
-    curUniqueVehIds = unique(curVehIds);
+    curVehIdsDays = gpsLocTableDays{idxDay}.vehicleId;
+    curUniqueVehIds = unique(curVehIdsDays);
     curNumOfVehs = length(curUniqueVehIds);
 
     [curGpsLonLatTracks, curGpsDatetimeStamps, curGpsLocTable] ...
         = deal(cell(curNumOfVehs, 1));
+    curVehIds = nan(curNumOfVehs, 1);
     for idxTrack = 1:curNumOfVehs
         curVehId = curUniqueVehIds(idxTrack);
         curGpsLonLatTracks{idxTrack} = gpsLocTableDays{idxDay}{ ...
-            curVehIds == curVehId, {'geo_Long', 'geo_Lat'}};
-        curGpsDatetimeStamps{idxTrack} = gpsLocTableDays{idxDay}{ ...
-            curVehIds == curVehId, {'timestamp'}};
+            curVehIdsDays == curVehId, {'geo_Long', 'geo_Lat'}};
+
+        curGpsDatetimeStamps{idxTrack} = datetime( ...
+            gpsLocTableDays{idxDay}{curVehIdsDays == curVehId, ...
+            {'timestamp'}}, 'TimeZone', 'UTC');
+        curGpsDatetimeStamps{idxTrack}.TimeZone = LOCAL_TIME_ZONE;
+
+        curVehIds(idxTrack) = curVehId;
+
         curGpsLocTable{idxTrack} ...
-            = gpsLocTableDays{idxDay}(curVehIds == curVehId,:);
+            = gpsLocTableDays{idxDay}(curVehIdsDays == curVehId,:);
     end
 
     gpsLonLatTracksEachDay{idxDay} = curGpsLonLatTracks;
     gpsDatetimeStampsEachDay{idxDay} = curGpsDatetimeStamps;
+    vehIdsEachDay{idxDay} = curVehIds;
     gpsLocTableEachDay{idxDay} = curGpsLocTable;
 end
 
@@ -290,19 +299,72 @@ for idxDay = 1:numOfDays
     delete([hTrackLines{:}]);
 end
 
+% An overview figure for all tracks (colored by track).
+numOfAllTracks = sum(cellfun(@(tab) length(unique(tab.vehicleId)), ...
+    gpsLocTableDays));
+hTrackLines = cell(numOfAllTracks, 1);
+trackCnt = 1;
+for idxDay = 1:numOfDays
+    curNumOfVehs = length(unique(gpsLocTableDays{idxDay}.vehicleId));
+    curGpsLonLatTracks = gpsLonLatTracksEachDay{idxDay};
+    for idxTrack = 1:curNumOfVehs
+        hTrackLines{trackCnt} = plot(curGpsLonLatTracks{idxTrack}(:,1), ...
+            curGpsLonLatTracks{idxTrack}(:,2), '.-', ...
+            'MarkerSize', 9, 'Color', rand(1,3));
+        trackCnt = trackCnt+1;
+    end
+end
+title({'All GPS Tracks (Colored by Track)', ...
+    ['Total # of Tracks = ', num2str(numOfAllTracks)]});
+axis(axisToSetIn);
+saveas(gcf, fullfile(pathToSaveDailyTrackOverviewFigs, ...
+    'TracksInIndiana_All.jpg'));
+axis(axisToSetIndianapolis);
+saveas(gcf, fullfile(pathToSaveDailyTrackOverviewFigs, ...
+    'TracksInIndiana_All_ZoomedIn.jpg'));
+delete([hTrackLines{:}]);
+
+% An overview figure for all tracks (colored by vehID).
+uniqueVehIds = unique(gpsLocTable.vehicleId);
+numOfAllVehs = length(uniqueVehIds);
+for idxVeh = 1:numOfAllVehs
+    curGpsLonLatTracks = vertcat(arrayfun(@(idxD) ...
+        gpsLonLatTracksEachDay{idxD}( ...
+        vehIdsEachDay{idxD}==uniqueVehIds(idxVeh), :), ...
+        (1:numOfDays)', 'UniformOutput', false));
+    % Merge tracks from different days.
+    curGpsLonLatTracks = vertcat(curGpsLonLatTracks{:});
+    % Merge tracks with [nan nan] paddings for plotting.
+    curGpsLonLatTracks = cellfun(@(t) [t; nan nan], ...
+        curGpsLonLatTracks, 'UniformOutput', false);
+    curGpsLonLatTracks = vertcat(curGpsLonLatTracks{:});
+
+    hTrackLines{idxVeh} = plot(curGpsLonLatTracks(:,1), ...
+        curGpsLonLatTracks(:,2), '.-', ...
+        'MarkerSize', 9, 'Color', rand(1,3));
+end
+title({'All GPS Tracks (Colored by Vehicle)', ...
+    ['Total # of Vehicles = ', num2str(numOfAllVehs)]});
+axis(axisToSetIn);
+saveas(gcf, fullfile(pathToSaveDailyTrackOverviewFigs, ...
+    'TracksInIndiana_AllVehs.jpg'));
+axis(axisToSetIndianapolis);
+saveas(gcf, fullfile(pathToSaveDailyTrackOverviewFigs, ...
+    'TracksInIndiana_AllVehs_ZoomedIn.jpg'));
+delete([hTrackLines{:}]);
+
+% Overview figures for pts out of Indiana.
 disp(['    [', datestr(now, datetimeFormat), ...
     '] Locating samples out of IN ...'])
-% Samples out of Indiana.
+
 gpsLonLatCoors = vertcat(cellfun(@(c) vertcat(c{:}), ...
     gpsLonLatTracksEachDay, 'UniformOutput', false));
 gpsLonLatCoors = vertcat(gpsLonLatCoors{:});
-
 % There are too many points to be handled by the built-in funciton
 % inpolygon. We noticed some false alarms from InPolygon. Here, we will use
 % another faster implementation of inpolygon, called inpoly2.
 boolsGpsLonLatCoorsOutOfIn = ~inpoly2(gpsLonLatCoors, ...
     inBoundaryLatLons(:,2:-1:1));
-
 gpsLonLatCoorsOutOfIn = gpsLonLatCoors(boolsGpsLonLatCoorsOutOfIn, :);
 
 figure('Visible', ~FLAG_SILENT_FIGS, 'Position', [0,0,800,800]); hold on;
@@ -530,7 +592,7 @@ for idxDay = 1:numOfDays
     view(3);
     if any(curBoolsOvertime)
         legend([hOverTimeRecords, hTrackLines{1}], ...
-            ['Over ', num2str(maxSampTimeInMinForPlot3kLower), ' min'], ...
+            ['Over ', num2str(maxSampTimeInMinForPlot3k), ' min'], ...
             'GPS Tracks', ...
             'Location', 'northwest');
     else
