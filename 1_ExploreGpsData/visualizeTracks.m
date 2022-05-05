@@ -51,6 +51,11 @@ diary(fullfile(pathToSaveResults, 'Diary.log'));
 googleMapAlpha = 0.25;
 FLAG_SILENT_FIGS = true;
 inBoundColor = [0, 0, 0, googleMapAlpha];
+xMarkerSize = 8;
+dotMarkerSize = 10;
+mapXLabel = 'Longitude (degree)';
+mapYLabel = 'Latitude (degree)';
+mapZLabel = '';
 
 %% Load GPS Data
 
@@ -280,7 +285,7 @@ for idxDay = 1:numOfDays
     for idxTrack = 1:curNumOfVehs
         hTrackLines{idxTrack} = plot(curGpsLonLatTracks{idxTrack}(:,1), ...
             curGpsLonLatTracks{idxTrack}(:,2), '.-', ...
-            'MarkerSize', 9);
+            'MarkerSize', dotMarkerSize);
     end
     [y,m,d] = ymd(gpsLocTableDays{idxDay}{1,'timestamp'});
     title(['GPS Tracks on ', ...
@@ -310,7 +315,7 @@ for idxDay = 1:numOfDays
     for idxTrack = 1:curNumOfVehs
         hTrackLines{trackCnt} = plot(curGpsLonLatTracks{idxTrack}(:,1), ...
             curGpsLonLatTracks{idxTrack}(:,2), '.-', ...
-            'MarkerSize', 9, 'Color', rand(1,3));
+            'MarkerSize', dotMarkerSize, 'Color', rand(1,3));
         trackCnt = trackCnt+1;
     end
 end
@@ -341,7 +346,7 @@ for idxVeh = 1:numOfAllVehs
 
     hTrackLines{idxVeh} = plot(curGpsLonLatTracks(:,1), ...
         curGpsLonLatTracks(:,2), '.-', ...
-        'MarkerSize', 9, 'Color', rand(1,3));
+        'MarkerSize', dotMarkerSize, 'Color', rand(1,3));
 end
 title({'All GPS Tracks (Colored by Vehicle)', ...
     ['Total # of Vehicles = ', num2str(numOfAllVehs)]});
@@ -368,6 +373,7 @@ boolsGpsLonLatCoorsOutOfIn = ~inpoly2(gpsLonLatCoors, ...
 gpsLonLatCoorsOutOfIn = gpsLonLatCoors(boolsGpsLonLatCoorsOutOfIn, :);
 
 figure('Visible', ~FLAG_SILENT_FIGS, 'Position', [0,0,800,800]); hold on;
+set(gca, 'FontWeight', 'bold');
 plot(inBoundaryLatLons(:,2), inBoundaryLatLons(:,1), ...
     '-', 'LineWidth', 3, 'Color', inBoundColor);
 plot(gpsLonLatCoorsOutOfIn(:,1), gpsLonLatCoorsOutOfIn(:,2), 'r.');
@@ -401,7 +407,7 @@ saveas(gcf, fullfile(pathToSaveDailyTrackOverviewFigs, ...
 disp(['[', datestr(now, datetimeFormat), ...
     '] Done!'])
 
-%% Inspect the Time Stamps
+%% Inspect the Time Stamps (Day)
 
 disp(' ')
 disp(['[', datestr(now, datetimeFormat), ...
@@ -417,7 +423,70 @@ xlabel(['Local Time After Midnight at ', dateTimesEst.TimeZone, ' (h)']);
 ylabel('Record Count (#)');
 
 saveas(gcf, fullfile(pathToSaveResults, ...
-    ['OverallStatistics_Histogram_', curField, '.jpg']));
+    'TimeStamps_HoursAfterMidnight_Histogram.jpg'));
+
+disp(['[', datestr(now, datetimeFormat), ...
+    '] Done!'])
+
+%% Inspect the Time Stamps (Hour)
+
+disp(' ')
+disp(['[', datestr(now, datetimeFormat), ...
+    '] Calculating time stamps in minutes ' ...
+    ' past the start of each hour ...'])
+
+timestampsInSPastStartOfEachMin = minutes( ...
+    dateTimesEst - dateshift(dateTimesEst, 'start', 'hour'));
+
+figure('Visible', ~FLAG_SILENT_FIGS, 'Position', cdfAndHistFigPos);
+histogram(timestampsInSPastStartOfEachMin);
+xlim([0, 60]); axis tight; grid on; grid minor;
+xlabel('Time After Start of Hour (min)');
+ylabel('Record Count (#)');
+
+saveas(gcf, fullfile(pathToSaveResults, ...
+    'TimeStamps_MinsAfterStartOfHour_Histogram.jpg'));
+
+disp(['[', datestr(now, datetimeFormat), ...
+    '] Done!'])
+
+%% Inspect the Time Stamps (Minute)
+
+disp(' ')
+disp(['[', datestr(now, datetimeFormat), ...
+    '] Calculating time stamps in seconds' ...
+    ' past the start of each minute ...'])
+
+timestampsInSPastStartOfEachMin = seconds( ...
+    dateTimesEst - dateshift(dateTimesEst, 'start', 'minute'));
+
+figure('Visible', ~FLAG_SILENT_FIGS, 'Position', cdfAndHistFigPos);
+histogram(timestampsInSPastStartOfEachMin);
+xlim([0, 60]); axis tight; grid on; grid minor;
+xlabel('Time After Start of Minute (s)');
+ylabel('Record Count (#)');
+
+saveas(gcf, fullfile(pathToSaveResults, ...
+    'TimeStamps_SecondsAfterStartOfMin_Histogram.jpg'));
+
+% Show the locations of the [59.5, 60) time stamps.
+boolsPtsToPlot = timestampsInSPastStartOfEachMin>=59 ...
+    & timestampsInSPastStartOfEachMin<60;
+
+figure('Visible', ~FLAG_SILENT_FIGS, 'Position', [0,0,800,800]);
+hold on; set(gca, 'FontWeight', 'bold');
+plot(inBoundaryLatLons(:,2), inBoundaryLatLons(:,1), ...
+    '-', 'LineWidth', 3, 'Color', inBoundColor);
+plot_google_map('MapType', 'road', 'Alpha', googleMapAlpha);
+axis manual;
+plot(gpsLocTable.geo_Long(boolsPtsToPlot), ...
+    gpsLocTable.geo_Lat(boolsPtsToPlot), ...
+    'r.', 'MarkerSize', dotMarkerSize);
+view(2); xlabel(mapXLabel); ylabel(mapYLabel);
+title('Points with Time After Start of Minute (s) in [59.5, 60)')
+
+saveas(gcf, fullfile(pathToSaveResults, ...
+    'TimeStamps_SecondsAfterStartOfMin_SampLocs.jpg'));
 
 disp(['[', datestr(now, datetimeFormat), ...
     '] Done!'])
@@ -512,6 +581,7 @@ disp(['[', datestr(now, datetimeFormat), ...
 
 % Reuse background graphics.
 figure('Visible', ~FLAG_SILENT_FIGS, 'Position', [0,0,800,800]); hold on;
+set(gca, 'FontWeight', 'bold');
 plot(inBoundaryLatLons(:,2), inBoundaryLatLons(:,1), ...
     '-', 'LineWidth', 3, 'Color', inBoundColor);
 xlabel('Longitute'); ylabel('Latitude');
@@ -526,9 +596,6 @@ colorbar;
 
 plot_google_map('MapType', 'road', 'Alpha', googleMapAlpha); axis manual;
 
-curXLabel = 'Longitude (degree)';
-curYLabel = 'Latitude (degree)';
-curZLabel = '';
 curPlot3kCbLabel = 'Sampling Time (min)';
 for idxDay = 1:numOfDays
     [y,m,d] = ymd(gpsLocTableDays{idxDay}{1,'timestamp'});
@@ -561,7 +628,7 @@ for idxDay = 1:numOfDays
     [~,~,hCb] = plot3k([curGpsLonLatToPlot(~curBoolsOvertime, :), ...
         curSampTimesInMinToPlot(~curBoolsOvertime)], ...
         'ColorRange', [0, maxSampTimeInMinForPlot3k], 'Labels', ...
-        {curFigTitle, curXLabel, curYLabel, curZLabel, curPlot3kCbLabel});
+        {curFigTitle, mapXLabel, mapYLabel, mapZLabel, curPlot3kCbLabel});
     view(2); zlim([0, maxSampTimeInMinForPlot3k]);
     curMaxTickLabel = hCb.TickLabels{end};
     idxSpaceToReplace = find(isspace(curMaxTickLabel), 1, 'last');
@@ -576,7 +643,7 @@ for idxDay = 1:numOfDays
             curGpsLonLatToPlot(curBoolsOvertime, 2), ...
             maxSampTimeInMinForPlot3k.*ones(sum(curBoolsOvertime), 1), ...
             'x', 'Color', overTimeSampColor, 'LineStyle', 'none', ...
-            'MarkerSize', 8, 'LineWidth', 1.1);
+            'MarkerSize', xMarkerSize, 'LineWidth', 1.1);
 
         legend([hOverTimeRecords, hTrackLines{1}], ...
             ['Over ', num2str(maxSampTimeInMinForPlot3k), ' min'], ...
@@ -617,7 +684,7 @@ for idxDay = 1:numOfDays
     [~,~,hCb] = plot3k([curGpsLonLatToPlot(~curBoolsOvertimeS, :), ...
         curSampTimesInMinToPlot(~curBoolsOvertimeS)], ...
         'ColorRange', [0, maxSampTimeInMinForPlot3kLower], 'Labels', ...
-        {curFigTitle, curXLabel, curYLabel, curZLabel, curPlot3kCbLabel});
+        {curFigTitle, mapXLabel, mapYLabel, mapZLabel, curPlot3kCbLabel});
     view(2); zlim([0, maxSampTimeInMinForPlot3kLower]);
     curMaxTickLabel = hCb.TickLabels{end};
     idxSpaceToReplace = find(isspace(curMaxTickLabel), 1, 'last');
@@ -633,7 +700,7 @@ for idxDay = 1:numOfDays
             maxSampTimeInMinForPlot3kLower...
             .*ones(sum(curBoolsOvertimeS), 1), ...
             'x', 'Color', overTimeSampColor, 'LineStyle', 'none', ...
-            'MarkerSize', 8, 'LineWidth', 1.1);
+            'MarkerSize', xMarkerSize, 'LineWidth', 1.1);
 
         legend([hOverTimeRecords, hTrackLines{1}], ...
             ['Over ', num2str(maxSampTimeInMinForPlot3kLower), ' min'], ...
@@ -701,7 +768,7 @@ curFigTitle = 'Sampling Time for All Dates';
 [~,~,hCb] = plot3k([gpsLonLatToPlot(~boolsOvertime, :), ...
     sampTimesInMinToPlot(~boolsOvertime)], ...
     'ColorRange', [0, maxSampTimeInMinForPlot3k], 'Labels', ...
-    {curFigTitle, curXLabel, curYLabel, curZLabel, curPlot3kCbLabel});
+    {curFigTitle, mapXLabel, mapYLabel, mapZLabel, curPlot3kCbLabel});
 view(2); zlim([0, maxSampTimeInMinForPlot3k]);
 curMaxTickLabel = hCb.TickLabels{end};
 idxSpaceToReplace = find(isspace(curMaxTickLabel), 1, 'last');
@@ -715,7 +782,7 @@ if any(boolsOvertime)
         gpsLonLatToPlot(boolsOvertime, 2), ...
         maxSampTimeInMinForPlot3k.*ones(sum(boolsOvertime), 1), ...
         'x', 'Color', overTimeSampColor, 'LineStyle', 'none', ...
-        'MarkerSize', 8, 'LineWidth', 1.1);
+        'MarkerSize', xMarkerSize, 'LineWidth', 1.1);
 
     legend([hOverTimeRecords, hTrackLines{1}], ...
         ['Over ', num2str(maxSampTimeInMinForPlot3k), ' min'], ...
@@ -753,7 +820,7 @@ curFigTitle = 'Sampling Time for All Dates';
 [~,~,hCb] = plot3k([gpsLonLatToPlot(~boolsOvertimeS, :), ...
     sampTimesInMinToPlot(~boolsOvertimeS)], ...
     'ColorRange', [0, maxSampTimeInMinForPlot3kLower], 'Labels', ...
-    {curFigTitle, curXLabel, curYLabel, curZLabel, curPlot3kCbLabel});
+    {curFigTitle, mapXLabel, mapYLabel, mapZLabel, curPlot3kCbLabel});
 view(2); zlim([0, maxSampTimeInMinForPlot3kLower]);
 curMaxTickLabel = hCb.TickLabels{end};
 idxSpaceToReplace = find(isspace(curMaxTickLabel), 1, 'last');
@@ -767,7 +834,7 @@ if any(boolsOvertimeS)
         gpsLonLatToPlot(boolsOvertimeS, 2), ...
         maxSampTimeInMinForPlot3kLower.*ones(sum(boolsOvertimeS), 1), ...
         'x', 'Color', overTimeSampColor, 'LineStyle', 'none', ...
-        'MarkerSize', 8, 'LineWidth', 1.1);
+        'MarkerSize', xMarkerSize, 'LineWidth', 1.1);
 
     legend([hOverTimeRecords, hTrackLines{1}], ...
         ['Over ', num2str(maxSampTimeInMinForPlot3kLower), ' min'], ...
@@ -822,7 +889,7 @@ inGridLatLons = [inGridLats, inGridLons];
 
 % Reuse map background.
 figure('Visible', ~FLAG_SILENT_FIGS, 'Position', [0,0,800,800]);
-hold on;
+hold on; set(gca, 'FontWeight', 'bold');
 plot(inBoundaryLatLons(:,2), inBoundaryLatLons(:,1), ...
     '-', 'LineWidth', 3, 'Color', inBoundColor);
 plot_google_map('MapType', 'road', 'Alpha', googleMapAlpha);
@@ -853,9 +920,6 @@ for RADIUS_TO_INSPECT_IN_M = radiiToInspectInM
     maxOverTimeSampSDen = max(overTimeSampSDenNPerSqKms);
 
     % Density map for over-time records.
-    curXLabel = 'Longitude (degree)';
-    curYLabel = 'Latitude (degree)';
-    curZLabel = '';
     curPlot3kCbLabel = 'Sample Density (# per km^2)';
 
     curFigTitle = {['Over-Time GPS Sample Density (Over ', ...
@@ -864,7 +928,7 @@ for RADIUS_TO_INSPECT_IN_M = radiiToInspectInM
         num2str(RADIUS_TO_INSPECT_IN_M/1000), ' km']};
     plot3k([inGridLatLons(:,2:-1:1), overTimeSampDenNPerSqKms], ...
         'ColorRange', [0, maxOverTimeSampDen], 'Labels', ...
-        {curFigTitle, curXLabel, curYLabel, curZLabel, curPlot3kCbLabel});
+        {curFigTitle, mapXLabel, mapYLabel, mapZLabel, curPlot3kCbLabel});
     view(2); zlim([0, maxOverTimeSampDen]);
 
     saveas(gcf, fullfile(pathToSaveDailyTrackOverviewFigs, ...
@@ -878,7 +942,7 @@ for RADIUS_TO_INSPECT_IN_M = radiiToInspectInM
         num2str(RADIUS_TO_INSPECT_IN_M/1000), ' km']};
     plot3k([inGridLatLons(:,2:-1:1), overTimeSampSDenNPerSqKms], ...
         'ColorRange', [0, maxOverTimeSampSDen], 'Labels', ...
-        {curFigTitle, curXLabel, curYLabel, curZLabel, curPlot3kCbLabel});
+        {curFigTitle, mapXLabel, mapYLabel, mapZLabel, curPlot3kCbLabel});
     view(2); zlim([0, maxOverTimeSampSDen]);
 
     saveas(gcf, fullfile(pathToSaveDailyTrackOverviewFigs, ...
