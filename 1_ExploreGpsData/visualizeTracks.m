@@ -68,6 +68,15 @@ gpsLocTable = readtable(pathToGpsLocCsv);
 % Add a new column speedmph.
 gpsLocTable.speedmph =  convlength(gpsLocTable.speedkph, 'km', 'mi');
 
+% Add a new column timestamp_local.
+LOCAL_TIME_ZONE = 'America/Indianapolis';
+% UTC time stamps.
+dateTimesUtc = datetime(gpsLocTable.timestamp, 'TimeZone', 'UTC');
+% Local time stamps.
+dateTimesEst = dateTimesUtc;
+dateTimesEst.TimeZone = LOCAL_TIME_ZONE;
+gpsLocTable.timestamp_local = dateTimesEst;
+
 disp(['[', datestr(now, datetimeFormat), ...
     '] Done!'])
 
@@ -196,13 +205,6 @@ disp(['[', datestr(now, datetimeFormat), ...
 disp(' ')
 disp(['[', datestr(now, datetimeFormat), ...
     '] Organizing GPS points into tracks ...'])
-
-LOCAL_TIME_ZONE = 'America/Indianapolis';
-% UTC time stamps.
-dateTimesUtc = datetime(gpsLocTable.timestamp, 'TimeZone', 'UTC');
-% Local time stamps.
-dateTimesEst = dateTimesUtc;
-dateTimesEst.TimeZone = LOCAL_TIME_ZONE;
 
 % Sort GPS points into days; counting from day 1.
 dayCnts = 1 + floor(days( ...
