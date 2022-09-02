@@ -29,6 +29,14 @@ pathToGpsLocCsv = fullfile(pwd, '..', ...
     '20220804 AVL GPS Data for Purdue v2 csv', ...
     '20220804 AVL GPS Data for Purdue v2.csv');
 
+% The absolute path to the Howell vehicle inventory .csv files, just in
+% case the vehicle ID is not present in the GPS records.
+pathToTrackCsv = fullfile(pwd, '..', ...
+    '20220221_ExampleData', '20210301_to_20210501_avl', 'truck.csv');
+% pathToVehicleInventoryCsv = fullfile(pwd, '..', ...
+%     '20220221_ExampleData', '20210301_to_20210501_avl', ...
+%     'vehicle_inventory.csv');
+
 % Log the command line output.
 diary(fullfile(pathToSaveResults, 'Diary.log'));
 
@@ -102,12 +110,69 @@ vehicleTimeStamps = vertcat(gpsLocTable.VEHICLE_TIMESTAMP{:});
 vehicleTimeStamps = vehicleTimeStamps(:, ...
     1:indexEndOfAmOrPmInLocalTimeStrings);
 
+%% Find vehicle IDs and names. Note that the ASSET_LABEL field may not be
+% available. If it is present, we will extract vehId accordingly.
+% Otherwise, we will "guess" the vehId based on other data sets.
+numOfGpsSamps = size(gpsLocTable, 1);
+vehIds = nan(numOfGpsSamps, 1);
+vehNames = cell(numOfGpsSamps, 1);
+try
+    originalAssetLabels = gpsLocTable.ASSET_LABEL;
+
+    % Break the string into ID and name. Example ASSET_LABEL: "64267 DODGE
+    % STRATUS 2002 Automobile +".
+    indicesFirstNonNumAssetLabel = strfind(originalAssetLabels, ' ');
+
+    for idxGpsSamp = 1:numOfGpsSamps
+        curIdxFirstNonNumAssetLabel ...
+            = indicesFirstNonNumAssetLabel{idxGpsSamp}(1);
+
+        % Convert string integer IDs to numbers.
+        vehIds(idxGpsSamp) = sscanf( ...
+            originalAssetLabels{idxGpsSamp} ...
+            (1:(curIdxFirstNonNumAssetLabel-1)), ...
+            '%d');
+
+        vehNames{idxGpsSamp} = strtrim( ...
+            originalAssetLabels{idxGpsSamp} ...
+            ((curIdxFirstNonNumAssetLabel+1):end));
+    end
+catch
+    % We will use the inventory information to deduce vehIds and vehNames
+    % based on the sensor ID.
+    if ~exist('truckTable', 'var')
+        truckTable = readtable(pathToTrackCsv);
+    end
+    % if ~exist('vehInventoryTable', 'var')
+    %     vehInventoryTable = readtable(pathToVehicleInventoryCsv);
+    % end
+
+    for idxGpsSamp = 1:numOfGpsSamps
+        % INDOT and Parson's call this vehicleId, but it is essentually the
+        % ID for the Parson's GPS sensor.
+        curSensorId = gpsLocTable.VEHICLE_ID(idxGpsSamp);
+        curIdxTruck = find(truckTable.vehicleId == curSensorId);
+
+        if length(curIdxTruck) == 1
+            vehIds(idxGpsSamp) = truckTable.name(curIdxTruck);
+        else
+            vehIds(idxGpsSamp) = nan;
+        end
+
+        % curIdxVehInventory = find( ...
+        %     vehInventoryTable.name==vehIds(idxGpsSamp));
+        vehNames{idxGpsSamp} = '';
+    end
+end
+
 parsedGpsLocTable = table;
 parsedGpsLocTable.localDatetime = datetime(vehicleTimeStamps, ...
     'InputFormat', INDOT_TIMESTR_FORMAT, 'TimeZone', LOCAL_TIME_ZONE, ...
     'Format', DATETIME_FORMAT);
 parsedGpsLocTable.primeKey      = gpsLocTable.PRIMARY_KEY;
-parsedGpsLocTable.vehId         = gpsLocTable.VEHICLE_ID;
+parsedGpsLocTable.vehId         = vehIds;
+parsedGpsLocTable.vehNames      = vehNames;
+parsedGpsLocTable.sensorId      = gpsLocTable.VEHICLE_ID;
 parsedGpsLocTable.lat           = gpsLocTable.LATITUDE;
 parsedGpsLocTable.lon           = gpsLocTable.LONGITUDE;
 parsedGpsLocTable.speedMph      = gpsLocTable.SPEED_MILES_PER_HOUR;
@@ -187,12 +252,12 @@ cnt = 0;
 for idxVehWorkOrder = 1:numOfVehWorkOrders
     curDate = parsedVehWorkOrderTable.localDatetime(idxVehWorkOrder);
     curVehId = parsedVehWorkOrderTable.vehId(idxVehWorkOrder);
-    
+
     % We will inspect a time range, including the start time but excluding
     % the end time (00:00:00 of "tomorrow").
     curDateStart = dateshift(curDate, 'start', 'day');
     curDateEnd = dateshift(curDate, 'end', 'day');
-    
+
     timeWindowStart = curDate - hours(HOURS_BEFORE_WORK_DATE_TO_SEARCH);
     isCurGpsSampsByTime ...
         = (parsedGpsLocTable.localDatetime >= timeWindowStart) ...
