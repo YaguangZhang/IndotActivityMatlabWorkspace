@@ -42,11 +42,18 @@ defaultLineColors = [0, 0.4470, 0.7410; ...
     0.3010, 0.7450, 0.9330; ...
     0.6350, 0.0780, 0.1840];
 
-% Time string format.
+% Time string formats for parsing INDOT data.
 INDOT_DATE_FORMAT = 'dd-MMM-yy';
 INDOT_TIMESTR_FORMAT = 'dd-MMM-yy hh.mm.ss.SSSSSSSSS a';
+% Format to use for storing time as datetime objects in Matlab.
+DATETIME_FORMAT = 'yyyy-MM-dd HH:mm:ss';
+
 % Expected time zone.
 LOCAL_TIME_ZONE = 'America/Indianapolis';
+
+% Hours to search before the work order date for GPS records, just in case
+% night shifts are involved.
+HOURS_BEFORE_WORK_DATE_TO_SEARCH = 24;
 
 %% Load Work Orders and GPS Tracks
 
@@ -95,14 +102,16 @@ vehicleTimeStamps = vertcat(gpsLocTable.VEHICLE_TIMESTAMP{:});
 vehicleTimeStamps = vehicleTimeStamps(:, ...
     1:indexEndOfAmOrPmInLocalTimeStrings);
 
-parsedGpsSamps.localDatetime = datetime(vehicleTimeStamps, ...
-    'InputFormat', INDOT_TIMESTR_FORMAT);
-parsedGpsSamps.primeKey      = gpsLocTable.PRIMARY_KEY;
-parsedGpsSamps.vehId         = gpsLocTable.VEHICLE_ID;
-parsedGpsSamps.lat           = gpsLocTable.LATITUDE;
-parsedGpsSamps.lon           = gpsLocTable.LONGITUDE;
-parsedGpsSamps.speedMph      = gpsLocTable.SPEED_MILES_PER_HOUR;
-parsedGpsSamps.heading       = gpsLocTable.VEHICLE_HEADING;
+parsedGpsLocTable = table;
+parsedGpsLocTable.localDatetime = datetime(vehicleTimeStamps, ...
+    'InputFormat', INDOT_TIMESTR_FORMAT, 'TimeZone', LOCAL_TIME_ZONE, ...
+    'Format', DATETIME_FORMAT);
+parsedGpsLocTable.primeKey      = gpsLocTable.PRIMARY_KEY;
+parsedGpsLocTable.vehId         = gpsLocTable.VEHICLE_ID;
+parsedGpsLocTable.lat           = gpsLocTable.LATITUDE;
+parsedGpsLocTable.lon           = gpsLocTable.LONGITUDE;
+parsedGpsLocTable.speedMph      = gpsLocTable.SPEED_MILES_PER_HOUR;
+parsedGpsLocTable.heading       = gpsLocTable.VEHICLE_HEADING;
 
 disp(['[', datestr(now, datetimeFormat), '] Done!'])
 
@@ -155,14 +164,55 @@ end
 assert(all(vehIds==round(vehIds)), 'Non-integer vehicle ID found!')
 assert(all(actIds==round(actIds)), 'Non-integer activity ID found!')
 
-parsedVehWorkOrders.localDatetime = datetime(vehWorkOrderTable.WorkDate, ...
-    'Format', INDOT_DATE_FORMAT, 'TimeZone', LOCAL_TIME_ZONE);
-parsedVehWorkOrders.workOrderId = vehWorkOrderTable.WO;
-parsedVehWorkOrders.vehId = vehIds;
-parsedVehWorkOrders.vehName = vehNames;
-parsedVehWorkOrders.actId = actIds;
-parsedVehWorkOrders.actName = actNames;
-parsedVehWorkOrders.totalHrs = vehWorkOrderTable.TotalHrs;
+parsedVehWorkOrderTable = table;
+parsedVehWorkOrderTable.localDatetime = datetime(vehWorkOrderTable.WorkDate, ...
+    'InputFormat', INDOT_DATE_FORMAT, 'TimeZone', LOCAL_TIME_ZONE, ...
+    'Format', DATETIME_FORMAT);
+parsedVehWorkOrderTable.workOrderId = vehWorkOrderTable.WO;
+parsedVehWorkOrderTable.vehId = vehIds;
+parsedVehWorkOrderTable.vehName = vehNames;
+parsedVehWorkOrderTable.actId = actIds;
+parsedVehWorkOrderTable.actName = actNames;
+parsedVehWorkOrderTable.totalHrs = vehWorkOrderTable.TotalHrs;
+
+disp(['[', datestr(now, datetimeFormat), '] Done!'])
+
+%% Find GPS Tracks for Each Vehicle Work Order
+
+disp(' ')
+disp(['[', datestr(now, datetimeFormat), ...
+    '] Searching for GPS records for equipment work orders ...'])
+
+cnt = 0;
+for idxVehWorkOrder = 1:numOfVehWorkOrders
+    curDate = parsedVehWorkOrderTable.localDatetime(idxVehWorkOrder);
+    curVehId = parsedVehWorkOrderTable.vehId(idxVehWorkOrder);
+    
+    % We will inspect a time range, including the start time but excluding
+    % the end time (00:00:00 of "tomorrow").
+    curDateStart = dateshift(curDate, 'start', 'day');
+    curDateEnd = dateshift(curDate, 'end', 'day');
+    
+    timeWindowStart = curDate - hours(HOURS_BEFORE_WORK_DATE_TO_SEARCH);
+    isCurGpsSampsByTime ...
+        = (parsedGpsLocTable.localDatetime >= timeWindowStart) ...
+        & (parsedGpsLocTable.localDatetime < curDateEnd);
+
+    % Also filter GPS samps by vehicle name.
+    isCurGpsSampsByVehId = parsedGpsLocTable.vehId == curVehId;
+
+    % Retrieve the GPS samples accordingly.
+    curParsedGpsLocTable = parsedGpsLocTable( ...
+        isCurGpsSampsByTime & isCurGpsSampsByVehId, :);
+
+    if ~isempty(curParsedGpsLocTable)
+        cnt = cnt+1;
+    end
+end
+
+% Generate an overview figure for each day's work orders. GPS samples
+% (dots) on the map are adjusted based how "stale" they are, e.g., .
+plot_google_map
 
 disp(['[', datestr(now, datetimeFormat), '] Done!'])
 
