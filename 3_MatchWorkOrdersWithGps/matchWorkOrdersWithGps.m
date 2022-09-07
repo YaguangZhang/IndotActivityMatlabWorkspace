@@ -63,6 +63,9 @@ LOCAL_TIME_ZONE = 'America/Indianapolis';
 % night shifts are involved.
 HOURS_BEFORE_WORK_DATE_TO_SEARCH = 24;
 
+% Flag to enable debug plot generation.
+FLAG_GEN_DEBUG_FIGS = true;
+
 %% Load Work Orders and GPS Tracks
 
 disp(' ')
@@ -110,13 +113,17 @@ vehicleTimeStamps = vertcat(gpsLocTable.VEHICLE_TIMESTAMP{:});
 vehicleTimeStamps = vehicleTimeStamps(:, ...
     1:indexEndOfAmOrPmInLocalTimeStrings);
 
-%% Find vehicle IDs and names. Note that the ASSET_LABEL field may not be
+% Find vehicle IDs and names. Note that the ASSET_LABEL field may not be
 % available. If it is present, we will extract vehId accordingly.
 % Otherwise, we will "guess" the vehId based on other data sets.
 numOfGpsSamps = size(gpsLocTable, 1);
 vehIds = nan(numOfGpsSamps, 1);
 vehNames = cell(numOfGpsSamps, 1);
-try
+% Use 'ASSET_LABEL' when it is available because both vehicle ID and name
+% can be extracted. Switch to 'COMMISION_NUMBER' for vehicle ID if
+% necessary. As the last resort, if none of these fields are present, we
+% will guess the vehicle ID based on history datasets.
+if isfield(gpsLocTable, 'ASSET_LABEL')
     originalAssetLabels = gpsLocTable.ASSET_LABEL;
 
     % Break the string into ID and name. Example ASSET_LABEL: "64267 DODGE
@@ -137,15 +144,19 @@ try
             originalAssetLabels{idxGpsSamp} ...
             ((curIdxFirstNonNumAssetLabel+1):end));
     end
-catch
+elseif isfield(gpsLocTable, 'COMMISION_NUMBER')
+    vehIds = gpsLocTable.COMMISION_NUMBER;
+
+    for idxGpsSamp = 1:numOfGpsSamps
+        % TODO: veh name does not seem to be available.
+        vehNames{idxGpsSamp} = '';
+    end
+else
     % We will use the inventory information to deduce vehIds and vehNames
     % based on the sensor ID.
     if ~exist('truckTable', 'var')
         truckTable = readtable(pathToTrackCsv);
     end
-    % if ~exist('vehInventoryTable', 'var')
-    %     vehInventoryTable = readtable(pathToVehicleInventoryCsv);
-    % end
 
     for idxGpsSamp = 1:numOfGpsSamps
         % INDOT and Parson's call this vehicleId, but it is essentually the
@@ -159,8 +170,7 @@ catch
             vehIds(idxGpsSamp) = nan;
         end
 
-        % curIdxVehInventory = find( ...
-        %     vehInventoryTable.name==vehIds(idxGpsSamp));
+        % TODO: veh name does not seem to be available.
         vehNames{idxGpsSamp} = '';
     end
 end
@@ -242,36 +252,88 @@ parsedVehWorkOrderTable.totalHrs = vehWorkOrderTable.TotalHrs;
 
 disp(['[', datestr(now, datetimeFormat), '] Done!'])
 
+%% Convert Datetime to Epoch
+% This will be faster for later comparisons because results will be numbers
+% (double) instead of objects.
+%
+% Example:
+%     A = datetime(2013,07,26) + calyears(0:2:6);
+%      B = datetime(2014,06,01);
+%     AE = convertTo(A, 'posixtime');
+%      BE = convertTo(B, 'posixtime');
+%     numOfTs = 1000;
+%      tic;
+%     for idxT = 1:numOfTs
+%         A>B;
+%     end
+%      toc;
+%
+%      tic;
+%     for idxT = 1:numOfTs
+%         AE>AE;
+%     end
+%      toc;
+%
+% Results:
+%     Elapsed time is 0.051813 seconds.
+%      Elapsed time is 0.013643 seconds.
+
+parsedGpsLocTable.unixTime = convertTo( ...
+    parsedGpsLocTable.localDatetime, 'posixtime');
+parsedVehWorkOrderTable.unixTime = convertTo( ...
+    parsedVehWorkOrderTable.localDatetime, 'posixtime');
+
 %% Find GPS Tracks for Each Vehicle Work Order
 
 disp(' ')
 disp(['[', datestr(now, datetimeFormat), ...
     '] Searching for GPS records for equipment work orders ...'])
 
-cnt = 0;
+if FLAG_GEN_DEBUG_FIGS
+    cnt = 0;
+    maxCntToStop = 100;
+end
+
+parsedVehWorkOrderTable.recIndicesInparsedGpsLocTable ...
+    = cell(numOfVehWorkOrders, 1);
 for idxVehWorkOrder = 1:numOfVehWorkOrders
     curDate = parsedVehWorkOrderTable.localDatetime(idxVehWorkOrder);
     curVehId = parsedVehWorkOrderTable.vehId(idxVehWorkOrder);
 
     % We will inspect a time range, including the start time but excluding
-    % the end time (00:00:00 of "tomorrow").
+    % the end time (24:00:00 of "today" or 00:00:00 of "tomorrow").
     curDateStart = dateshift(curDate, 'start', 'day');
     curDateEnd = dateshift(curDate, 'end', 'day');
 
-    timeWindowStart = curDate - hours(HOURS_BEFORE_WORK_DATE_TO_SEARCH);
-    isCurGpsSampsByTime ...
-        = (parsedGpsLocTable.localDatetime >= timeWindowStart) ...
-        & (parsedGpsLocTable.localDatetime < curDateEnd);
+    unixTimeWindowStart = curDateStart ...
+        - hours(HOURS_BEFORE_WORK_DATE_TO_SEARCH);
+    unixTimeWindowEnd = curDateEnd;
 
-    % Also filter GPS samps by vehicle name.
-    isCurGpsSampsByVehId = parsedGpsLocTable.vehId == curVehId;
+    parsedVehWorkOrderTable.recIndicesInparsedGpsLocTable ...
+        {idxVehWorkOrder} = find( ...
+        ... % Filter GPS samps by vehicle name.
+        (parsedGpsLocTable.vehId == curVehId) ...
+        ... % We will inspect a time range, including the start time but
+        ... % excluding the end time (00:00:00 of "tomorrow").
+        & (parsedGpsLocTable.localDatetime >= unixTimeWindowStart) ...
+        & (parsedGpsLocTable.localDatetime < unixTimeWindowEnd));
 
-    % Retrieve the GPS samples accordingly.
-    curParsedGpsLocTable = parsedGpsLocTable( ...
-        isCurGpsSampsByTime & isCurGpsSampsByVehId, :);
+    if FLAG_GEN_DEBUG_FIGS
+        % Retrieve the GPS samples accordingly.
+        curParsedGpsLocTable = parsedGpsLocTable( ...
+            parsedVehWorkOrderTable.recIndicesInparsedGpsLocTable ...
+            {idxVehWorkOrder}, :);
 
-    if ~isempty(curParsedGpsLocTable)
-        cnt = cnt+1;
+        if ~isempty(curParsedGpsLocTable)
+            cnt = cnt+1;
+
+            % Generate a debug figure to show the GPS points on a map.
+
+        end
+
+        if (cnt == maxCntToStop)
+            break
+        end
     end
 end
 
