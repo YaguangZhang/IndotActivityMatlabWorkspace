@@ -240,7 +240,8 @@ assert(all(vehIds==round(vehIds)), 'Non-integer vehicle ID found!')
 assert(all(actIds==round(actIds)), 'Non-integer activity ID found!')
 
 parsedVehWorkOrderTable = table;
-parsedVehWorkOrderTable.localDatetime = datetime(vehWorkOrderTable.WorkDate, ...
+parsedVehWorkOrderTable.localDatetime = ...
+    datetime(vehWorkOrderTable.WorkDate, ...
     'InputFormat', INDOT_DATE_FORMAT, 'TimeZone', LOCAL_TIME_ZONE, ...
     'Format', DATETIME_FORMAT);
 parsedVehWorkOrderTable.workOrderId = vehWorkOrderTable.WO;
@@ -290,8 +291,9 @@ disp(['[', datestr(now, datetimeFormat), ...
     '] Searching for GPS records for equipment work orders ...'])
 
 if FLAG_GEN_DEBUG_FIGS
+    % Generate a limited amount of debugging figures.
     cnt = 0;
-    maxCntToStop = 100;
+    maxCntToStop = 10;
 end
 
 parsedVehWorkOrderTable.recIndicesInparsedGpsLocTable ...
@@ -309,15 +311,20 @@ for idxVehWorkOrder = 1:numOfVehWorkOrders
         - hours(HOURS_BEFORE_WORK_DATE_TO_SEARCH);
     unixTimeWindowEnd = curDateEnd;
 
-    parsedVehWorkOrderTable.recIndicesInparsedGpsLocTable ...
-        {idxVehWorkOrder} = find( ...
-        ... % Filter GPS samps by vehicle name.
-        (parsedGpsLocTable.vehId == curVehId) ...
-        ... % We will inspect a time range, including the start time but
-        ... % excluding the end time (00:00:00 of "tomorrow").
-        & (parsedGpsLocTable.localDatetime >= unixTimeWindowStart) ...
-        & (parsedGpsLocTable.localDatetime < unixTimeWindowEnd));
+    % Speed the search up by filtering out candidates step by step. First,
+    % by vehicle ID.
+    boolsIsCandidateGpsPt = (parsedGpsLocTable.vehId == curVehId);
+    % Then, by the start time.
+    boolsIsCandidateGpsPt(boolsIsCandidateGpsPt) = ...
+        parsedGpsLocTable.localDatetime(boolsIsCandidateGpsPt) ...
+        >= unixTimeWindowStart;
+    % At last, by the end time.
+    boolsIsCandidateGpsPt(boolsIsCandidateGpsPt) = ...
+        parsedGpsLocTable.localDatetime(boolsIsCandidateGpsPt) ...
+        < unixTimeWindowEnd;
 
+    parsedVehWorkOrderTable.recIndicesInparsedGpsLocTable ...
+        {idxVehWorkOrder} = find(boolsIsCandidateGpsPt);
     if FLAG_GEN_DEBUG_FIGS
         % Retrieve the GPS samples accordingly.
         curParsedGpsLocTable = parsedGpsLocTable( ...
@@ -327,7 +334,8 @@ for idxVehWorkOrder = 1:numOfVehWorkOrders
         if ~isempty(curParsedGpsLocTable)
             cnt = cnt+1;
 
-            % Generate a debug figure to show the GPS points on a map.
+            % TODO: Generate a debug figure to show the GPS points on a
+            % map.
 
         end
 
@@ -337,9 +345,9 @@ for idxVehWorkOrder = 1:numOfVehWorkOrders
     end
 end
 
-% Generate an overview figure for each day's work orders. GPS samples
+% TODO: Generate an overview figure for each day's work orders. GPS samples
 % (dots) on the map are adjusted based how "stale" they are, e.g., .
-plot_google_map
+%plot_google_map
 
 disp(['[', datestr(now, datetimeFormat), '] Done!'])
 
