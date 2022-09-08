@@ -66,6 +66,9 @@ HOURS_BEFORE_WORK_DATE_TO_SEARCH = 24;
 % Flag to enable debug plot generation.
 FLAG_GEN_DEBUG_FIGS = true;
 
+% Controls the progress bar update frequency.
+numOfProBarUpdates = 100;
+
 %% Load Work Orders and GPS Tracks
 
 disp(' ')
@@ -74,10 +77,14 @@ disp(['[', datestr(now, datetimeFormat), ...
 
 % For fast debugging, avoid reloading data if they are already loaded.
 if ~exist('workOrderTable', 'var')
+    disp(['    [', datestr(now, datetimeFormat), ...
+        '] Loading work orders ...'])
     workOrderTable = readtable(pathToWorkOrderCsv);
     workOrderTable = renamevars(workOrderTable, 'WO_', 'WO');
 end
 if ~exist('gpsLocTable', 'var')
+    disp(['    [', datestr(now, datetimeFormat), ...
+        '] Loading GPS tracks ...'])
     gpsLocTable = readtable(pathToGpsLocCsv);
 end
 
@@ -92,6 +99,8 @@ disp(['[', datestr(now, datetimeFormat), ...
 % Extract needed information.
 numOfGpsLocs = size(gpsLocTable, 1);
 
+disp(['    [', datestr(now, datetimeFormat), ...
+    '] Parsing time stamps ...'])
 indicesEndOfAmOrPmInLocalTimeStrings ...
     = strfind(gpsLocTable.VEHICLE_TIMESTAMP, 'M ');
 indicesEndOfAmOrPmInLocalTimeStrings ...
@@ -113,17 +122,22 @@ vehicleTimeStamps = vertcat(gpsLocTable.VEHICLE_TIMESTAMP{:});
 vehicleTimeStamps = vehicleTimeStamps(:, ...
     1:indexEndOfAmOrPmInLocalTimeStrings);
 
+disp(['    [', datestr(now, datetimeFormat), ...
+    '] Parsing vehicle IDs and names ...'])
 % Find vehicle IDs and names. Note that the ASSET_LABEL field may not be
 % available. If it is present, we will extract vehId accordingly.
 % Otherwise, we will "guess" the vehId based on other data sets.
 numOfGpsSamps = size(gpsLocTable, 1);
 vehIds = nan(numOfGpsSamps, 1);
 vehNames = cell(numOfGpsSamps, 1);
+% For progress feedback.
+proBar = ProgressBar(floor(numOfGpsSamps/numOfProBarUpdates));
+proBarCnt = 0;
 % Use 'ASSET_LABEL' when it is available because both vehicle ID and name
 % can be extracted. Switch to 'COMMISION_NUMBER' for vehicle ID if
 % necessary. As the last resort, if none of these fields are present, we
 % will guess the vehicle ID based on history datasets.
-if isfield(gpsLocTable, 'ASSET_LABEL')
+if ismember('ASSET_LABEL', gpsLocTable.Properties.VariableNames)
     originalAssetLabels = gpsLocTable.ASSET_LABEL;
 
     % Break the string into ID and name. Example ASSET_LABEL: "64267 DODGE
@@ -143,8 +157,14 @@ if isfield(gpsLocTable, 'ASSET_LABEL')
         vehNames{idxGpsSamp} = strtrim( ...
             originalAssetLabels{idxGpsSamp} ...
             ((curIdxFirstNonNumAssetLabel+1):end));
+
+        proBarCnt = proBarCnt + 1;
+        if mod(proBarCnt, numOfProBarUpdates) == 0
+            proBar.progress;
+        end
     end
-elseif isfield(gpsLocTable, 'COMMISION_NUMBER')
+elseif ismember('COMMISION_NUMBER', gpsLocTable.Properties.VariableNames)
+    proBar.progress;
     vehIds = gpsLocTable.COMMISION_NUMBER;
 
     for idxGpsSamp = 1:numOfGpsSamps
@@ -172,13 +192,23 @@ else
 
         % TODO: veh name does not seem to be available.
         vehNames{idxGpsSamp} = '';
+
+        proBarCnt = proBarCnt + 1;
+        if mod(proBarCnt, numOfProBarUpdates) == 0
+            proBar.progress;
+        end
     end
 end
+proBar.stop;
 
 parsedGpsLocTable = table;
+disp(['    [', datestr(now, datetimeFormat), ...
+    '] Converting time stamps to datetime objects ...'])
 parsedGpsLocTable.localDatetime = datetime(vehicleTimeStamps, ...
     'InputFormat', INDOT_TIMESTR_FORMAT, 'TimeZone', LOCAL_TIME_ZONE, ...
     'Format', DATETIME_FORMAT);
+disp(['    [', datestr(now, datetimeFormat), ...
+    '] Caching results ...'])
 parsedGpsLocTable.primeKey      = gpsLocTable.PRIMARY_KEY;
 parsedGpsLocTable.vehId         = vehIds;
 parsedGpsLocTable.vehNames      = vehNames;
@@ -216,6 +246,9 @@ numOfVehWorkOrders = size(originalResNames, 1);
 indicesMinusSignResName = strfind(originalResNames, '-');
 indicesMinusSignAct = strfind(originalActivities, '-');
 
+% For progress feedback.
+proBar = ProgressBar(floor(numOfVehWorkOrders/numOfProBarUpdates));
+proBarCnt = 0;
 for idxVehWorkOrder = 1:numOfVehWorkOrders
     curIdxFirstMinusSignResName ...
         = indicesMinusSignResName{idxVehWorkOrder}(1);
@@ -237,16 +270,26 @@ for idxVehWorkOrder = 1:numOfVehWorkOrders
     actNames{idxVehWorkOrder} = strtrim( ...
         originalActivities{idxVehWorkOrder} ...
         ((curIdxFirstMinusSignAct+1):end));
+
+    proBarCnt = proBarCnt + 1;
+    if mod(proBarCnt, numOfProBarUpdates) == 0
+        proBar.progress;
+    end
 end
+proBar.stop;
 
 assert(all(vehIds==round(vehIds)), 'Non-integer vehicle ID found!')
 assert(all(actIds==round(actIds)), 'Non-integer activity ID found!')
 
 parsedVehWorkOrderTable = table;
+disp(['    [', datestr(now, datetimeFormat), ...
+    '] Converting time stamps to datetime objects ...'])
 parsedVehWorkOrderTable.localDatetime = ...
     datetime(vehWorkOrderTable.WorkDate, ...
     'InputFormat', INDOT_DATE_FORMAT, 'TimeZone', LOCAL_TIME_ZONE, ...
     'Format', DATETIME_FORMAT);
+disp(['    [', datestr(now, datetimeFormat), ...
+    '] Caching results ...'])
 parsedVehWorkOrderTable.workOrderId = vehWorkOrderTable.WO;
 parsedVehWorkOrderTable.idxInWorkOrderTable ...
     = vehWorkOrderTable.idxInWorkOrderTable;
@@ -301,7 +344,7 @@ disp(['[', datestr(now, datetimeFormat), '] Done!'])
 % ID, and then, broken into continuous tracks. Thus, it is easier to work
 % with "work order groups", where each group has all the work order entries
 % with the same work order ID and vehicle ID.
-% 
+%
 % Work orders in the same group can be considered as "for the same
 % activity". This step will avoid unnecessary/repeated GPS sample
 % searching.
@@ -312,8 +355,8 @@ disp(['[', datestr(now, datetimeFormat), ...
     ' work order ID and vehicle ID ...'])
 
 % It is not clear how many work order groups we will get, but it is at
-% least the number of unique work order IDs. We will find work order
-% groups for each unique work order ID and concatenate the results.
+% least the number of unique work order IDs. We will find work order groups
+% for each unique work order ID and concatenate the results.
 uniqueWOIds = unique(parsedVehWorkOrderTable.workOrderId);
 numOfUniqueWOIds = length(uniqueWOIds);
 
@@ -323,7 +366,6 @@ cachedEntryIndicesInParsedVehWOT = cell(numOfUniqueWOIds, 1);
 
 cntWOG = 0;
 % For progress feedback.
-numOfProBarUpdates = 100;
 proBar = ProgressBar(floor(numOfUniqueWOIds/numOfProBarUpdates));
 proBarCnt = 0;
 for idxUniqueWOId = 1:numOfUniqueWOIds
@@ -371,7 +413,7 @@ for idxUniqueWOId = 1:numOfUniqueWOIds
     indicesEntryInParsedVehWOT( ...
         (cntSavedWOG+1):(cntSavedWOG+curNumOfWOGToSave)) ...
         = cachedEntryIndicesInParsedVehWOT{idxUniqueWOId};
-    
+
     for curIdxWOGToSave = 1:curNumOfWOGToSave
         parsedVehWorkOrderTable.idxWorkOrderGroup( ...
             cachedEntryIndicesInParsedVehWOT{idxUniqueWOId} ...
