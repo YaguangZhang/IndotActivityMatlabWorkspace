@@ -63,6 +63,10 @@ LOCAL_TIME_ZONE = 'America/Indianapolis';
 % night shifts are involved.
 HOURS_BEFORE_WORK_DATE_TO_SEARCH = 24;
 
+% Maximum allowed time gap in minutes between continuous activity/GPS
+% tracks.
+MAX_ALLOWED_TIME_GAP_IN_MIN = 10;
+
 % Flag to enable debug plot generation.
 FLAG_GEN_DEBUG_FIGS = true;
 
@@ -78,11 +82,57 @@ if ~exist('workOrderTable', 'var')
         '] Loading work orders ...'])
     workOrderTable = readtable(pathToWorkOrderCsv);
     workOrderTable = renamevars(workOrderTable, 'WO_', 'WO');
+
+    disp(['    [', datestr(now, datetimeFormat), ...
+        '] Converting time stamps to datetime objects ...'])
+    workOrderTable.WorkDatetime = ...
+        datetime(workOrderTable.WorkDate, ...
+        'InputFormat', INDOT_DATE_FORMAT, 'TimeZone', LOCAL_TIME_ZONE, ...
+        'Format', DATETIME_FORMAT);
+
+    % Order work order entries.
+    workOrderTable = sortrows(workOrderTable, ...
+        {'WorkDatetime', 'WO', ...
+        'ResourceType', 'ResourceName', 'Route_Ref_'});
 end
 if ~exist('gpsLocTable', 'var')
     disp(['    [', datestr(now, datetimeFormat), ...
         '] Loading GPS tracks ...'])
     gpsLocTable = readtable(pathToGpsLocCsv);
+
+    disp(['    [', datestr(now, datetimeFormat), ...
+        '] Parsing time stamps ...'])
+    indicesEndOfAmOrPmInLocalTimeStrings ...
+        = strfind(gpsLocTable.VEHICLE_TIMESTAMP, 'M ');
+    indicesEndOfAmOrPmInLocalTimeStrings ...
+        = vertcat(indicesEndOfAmOrPmInLocalTimeStrings{:});
+    indexEndOfAmOrPmInLocalTimeStrings ...
+        = indicesEndOfAmOrPmInLocalTimeStrings(1);
+
+    % Check the time string format.
+    assert(all(indicesEndOfAmOrPmInLocalTimeStrings ...
+        == indexEndOfAmOrPmInLocalTimeStrings), ...
+        'Inconsistent VEHICLE_TIMESTAMP format!')
+    % Check local time zone listed in the time string.
+    assert(all( ...
+        contains(gpsLocTable.VEHICLE_TIMESTAMP, upper(LOCAL_TIME_ZONE)) ...
+        ), 'Unexpected time zone found!')
+
+    % Convert time string to datetime for easier processing.
+    vehicleTimeStamps = vertcat(gpsLocTable.VEHICLE_TIMESTAMP{:});
+    vehicleTimeStamps = vehicleTimeStamps(:, ...
+        1:indexEndOfAmOrPmInLocalTimeStrings);
+
+    disp(['    [', datestr(now, datetimeFormat), ...
+        '] Converting time stamps to datetime objects ...'])
+    gpsLocTable.localDatetime = datetime(vehicleTimeStamps, ...
+        'InputFormat', INDOT_TIMESTR_FORMAT, ...
+        'TimeZone', LOCAL_TIME_ZONE, ...
+        'Format', DATETIME_FORMAT);
+
+    % Order GPS samples.
+    gpsLocTable = sortrows(gpsLocTable, ...
+        {'localDatetime', 'COMMISION_NUMBER'});
 end
 
 disp(['[', datestr(now, datetimeFormat), '] Done!'])
@@ -94,31 +144,6 @@ disp(['[', datestr(now, datetimeFormat), ...
     '] Extracting and formatting needed GPS information ...'])
 
 % Extract needed information.
-numOfGpsLocs = size(gpsLocTable, 1);
-
-disp(['    [', datestr(now, datetimeFormat), ...
-    '] Parsing time stamps ...'])
-indicesEndOfAmOrPmInLocalTimeStrings ...
-    = strfind(gpsLocTable.VEHICLE_TIMESTAMP, 'M ');
-indicesEndOfAmOrPmInLocalTimeStrings ...
-    = vertcat(indicesEndOfAmOrPmInLocalTimeStrings{:});
-indexEndOfAmOrPmInLocalTimeStrings ...
-    = indicesEndOfAmOrPmInLocalTimeStrings(1);
-
-% Check the time string format.
-assert(all(indicesEndOfAmOrPmInLocalTimeStrings ...
-    == indexEndOfAmOrPmInLocalTimeStrings), ...
-    'Inconsistent VEHICLE_TIMESTAMP format!')
-% Check local time zone listed in the time string.
-assert(all( ...
-    contains(gpsLocTable.VEHICLE_TIMESTAMP, upper(LOCAL_TIME_ZONE)) ...
-    ), 'Unexpected time zone found!')
-
-% Convert time string to datetime for easier processing.
-vehicleTimeStamps = vertcat(gpsLocTable.VEHICLE_TIMESTAMP{:});
-vehicleTimeStamps = vehicleTimeStamps(:, ...
-    1:indexEndOfAmOrPmInLocalTimeStrings);
-
 disp(['    [', datestr(now, datetimeFormat), ...
     '] Parsing vehicle IDs and names ...'])
 % Find vehicle IDs and names. Note that the ASSET_LABEL field may not be
@@ -193,14 +218,11 @@ else
 end
 proBar.stop;
 
-parsedGpsLocTable = table;
-disp(['    [', datestr(now, datetimeFormat), ...
-    '] Converting time stamps to datetime objects ...'])
-parsedGpsLocTable.localDatetime = datetime(vehicleTimeStamps, ...
-    'InputFormat', INDOT_TIMESTR_FORMAT, 'TimeZone', LOCAL_TIME_ZONE, ...
-    'Format', DATETIME_FORMAT);
 disp(['    [', datestr(now, datetimeFormat), ...
     '] Caching results ...'])
+
+parsedGpsLocTable = table;
+parsedGpsLocTable.localDatetime = gpsLocTable.localDatetime;
 parsedGpsLocTable.primeKey      = gpsLocTable.PRIMARY_KEY;
 parsedGpsLocTable.vehId         = vehIds;
 parsedGpsLocTable.vehNames      = vehNames;
@@ -269,15 +291,12 @@ proBar.stop;
 assert(all(vehIds==round(vehIds)), 'Non-integer vehicle ID found!')
 assert(all(actIds==round(actIds)), 'Non-integer activity ID found!')
 
-parsedVehWorkOrderTable = table;
-disp(['    [', datestr(now, datetimeFormat), ...
-    '] Converting time stamps to datetime objects ...'])
-parsedVehWorkOrderTable.localDatetime = ...
-    datetime(vehWorkOrderTable.WorkDate, ...
-    'InputFormat', INDOT_DATE_FORMAT, 'TimeZone', LOCAL_TIME_ZONE, ...
-    'Format', DATETIME_FORMAT);
 disp(['    [', datestr(now, datetimeFormat), ...
     '] Caching results ...'])
+
+parsedVehWorkOrderTable = table;
+parsedVehWorkOrderTable.localDatetime = ...
+    vehWorkOrderTable.WorkDatetime;
 parsedVehWorkOrderTable.workOrderId = vehWorkOrderTable.WO;
 parsedVehWorkOrderTable.idxInWorkOrderTable ...
     = vehWorkOrderTable.idxInWorkOrderTable;
@@ -393,6 +412,7 @@ parsedVehWorkOrderTable.idxWorkOrderGroup ...
 indicesEntryInParsedVehWOT = cell(cntWOG, 1);
 
 cntSavedWOG = 0;
+% For progress feedback.
 proBar = betterProBar(numOfUniqueWOIds);
 for idxUniqueWOId = 1:numOfUniqueWOIds
     curNumOfWOGToSave ...
@@ -414,7 +434,8 @@ for idxUniqueWOId = 1:numOfUniqueWOIds
 end
 proBar.stop;
 
-workOrderGroupTable = table(indicesEntryInParsedVehWOT);
+idxWorkOrderGroup = (1:cntWOG)';
+workOrderGroupTable = table(idxWorkOrderGroup, indicesEntryInParsedVehWOT);
 
 disp(['[', datestr(now, datetimeFormat), '] Done!'])
 
@@ -422,7 +443,7 @@ disp(['[', datestr(now, datetimeFormat), '] Done!'])
 
 disp(' ')
 disp(['[', datestr(now, datetimeFormat), ...
-    '] Searching for GPS records for equipment work orders ...'])
+    '] Searching for GPS tracks for work order groups ...'])
 
 if FLAG_GEN_DEBUG_FIGS
     % Generate a limited amount of debugging figures.
@@ -430,9 +451,26 @@ if FLAG_GEN_DEBUG_FIGS
     maxCntToStop = 10;
 end
 
-for idxVehWorkOrder = 1:numOfVehWorkOrders
-    curDate = parsedVehWorkOrderTable.localDatetime(idxVehWorkOrder);
-    curVehId = parsedVehWorkOrderTable.vehId(idxVehWorkOrder);
+numOfWorkOrderGroups = size(workOrderGroupTable, 1);
+
+% For grouping GPS samples into continuous tracks.
+maxAllowedTimeGapInS = MAX_ALLOWED_TIME_GAP_IN_MIN*60;
+
+% For saving the results.
+activityTracksForWOGTable = table;
+activityTracksForWOGTable.sampIndicesInParsedGpsLocTable ...
+    = cell(numOfWorkOrderGroups, 1);
+[activityTracksForWOGTable.idxWorkOrderGroup, ...
+    activityTracksForWOGTable.idxParsedVehWorkOrder] ...
+    = deal(nan(numOfWorkOrderGroups, 1));
+
+% For progress feedback.
+proBar = betterProBar(numOfWorkOrderGroups);
+for idxVehWOG = 1:numOfWorkOrderGroups
+    curDate = parsedVehWorkOrderTable.localDatetime( ...
+        workOrderGroupTable.indicesEntryInParsedVehWOT{idxVehWOG}(1));
+    curVehId = parsedVehWorkOrderTable.vehId( ...
+        workOrderGroupTable.indicesEntryInParsedVehWOT{idxVehWOG}(1));
 
     % We will inspect a time range, including the start time but excluding
     % the end time (24:00:00 of "today" or 00:00:00 of "tomorrow").
@@ -461,6 +499,8 @@ for idxVehWorkOrder = 1:numOfVehWorkOrders
     curParsedGpsLocTable = parsedGpsLocTable( ...
         curSampIndicesInParsedGpsLocTable, :);
 
+    % Group GPS samples into continuous tracks.
+
     if FLAG_GEN_DEBUG_FIGS
         if ~isempty(curParsedGpsLocTable)
             cnt = cnt+1;
@@ -474,7 +514,13 @@ for idxVehWorkOrder = 1:numOfVehWorkOrders
             break
         end
     end
+
+    proBar.progress;
 end
+proBar.stop;
+
+% TODO: Save results.
+parsedVehWorkOrderTable.idxActivityTrack;
 
 disp(['[', datestr(now, datetimeFormat), '] Done!'])
 
