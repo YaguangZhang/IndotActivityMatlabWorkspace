@@ -200,6 +200,9 @@ disp(['[', datestr(now, datetimeFormat), ...
 boolsIsEquipment = strcmp(workOrderTable.ResourceType, 'Equipment');
 vehWorkOrderTable = workOrderTable(boolsIsEquipment, :);
 
+% Store the indices in workOrderTable for easier raw data retrieval.
+vehWorkOrderTable.idxInWorkOrderTable = find(boolsIsEquipment);
+
 % Clean the names, e.g., by removing extra spaces.
 originalResNames = vehWorkOrderTable.ResourceName;
 originalActivities = vehWorkOrderTable.Activity;
@@ -245,6 +248,8 @@ parsedVehWorkOrderTable.localDatetime = ...
     'InputFormat', INDOT_DATE_FORMAT, 'TimeZone', LOCAL_TIME_ZONE, ...
     'Format', DATETIME_FORMAT);
 parsedVehWorkOrderTable.workOrderId = vehWorkOrderTable.WO;
+parsedVehWorkOrderTable.idxInWorkOrderTable ...
+    = vehWorkOrderTable.idxInWorkOrderTable;
 parsedVehWorkOrderTable.vehId = vehIds;
 parsedVehWorkOrderTable.vehName = vehNames;
 parsedVehWorkOrderTable.actId = actIds;
@@ -284,7 +289,11 @@ parsedGpsLocTable.unixTime = convertTo( ...
 parsedVehWorkOrderTable.unixTime = convertTo( ...
     parsedVehWorkOrderTable.localDatetime, 'posixtime');
 
-%% Find GPS Tracks for Each Vehicle Work Order
+%% TODO: Group Work Orders by Work Order ID and Vehicle ID
+% Work orders in the same group are for the same activity. This step will
+% avoid unnecessary/repeated GPS sample searching.
+
+%% Find GPS Tracks for Each Vehicle Work Order Group
 
 disp(' ')
 disp(['[', datestr(now, datetimeFormat), ...
@@ -296,8 +305,6 @@ if FLAG_GEN_DEBUG_FIGS
     maxCntToStop = 10;
 end
 
-parsedVehWorkOrderTable.recIndicesInparsedGpsLocTable ...
-    = cell(numOfVehWorkOrders, 1);
 for idxVehWorkOrder = 1:numOfVehWorkOrders
     curDate = parsedVehWorkOrderTable.localDatetime(idxVehWorkOrder);
     curVehId = parsedVehWorkOrderTable.vehId(idxVehWorkOrder);
@@ -323,14 +330,13 @@ for idxVehWorkOrder = 1:numOfVehWorkOrders
         parsedGpsLocTable.localDatetime(boolsIsCandidateGpsPt) ...
         < unixTimeWindowEnd;
 
-    parsedVehWorkOrderTable.recIndicesInparsedGpsLocTable ...
-        {idxVehWorkOrder} = find(boolsIsCandidateGpsPt);
-    if FLAG_GEN_DEBUG_FIGS
-        % Retrieve the GPS samples accordingly.
-        curParsedGpsLocTable = parsedGpsLocTable( ...
-            parsedVehWorkOrderTable.recIndicesInparsedGpsLocTable ...
-            {idxVehWorkOrder}, :);
+    curSampIndicesInParsedGpsLocTable = find(boolsIsCandidateGpsPt);
 
+    % Retrieve the GPS samples accordingly.
+    curParsedGpsLocTable = parsedGpsLocTable( ...
+        curSampIndicesInParsedGpsLocTable, :);
+
+    if FLAG_GEN_DEBUG_FIGS
         if ~isempty(curParsedGpsLocTable)
             cnt = cnt+1;
 
@@ -345,11 +351,20 @@ for idxVehWorkOrder = 1:numOfVehWorkOrders
     end
 end
 
-% TODO: Generate an overview figure for each day's work orders. GPS samples
-% (dots) on the map are adjusted based how "stale" they are, e.g., .
-%plot_google_map
-
 disp(['[', datestr(now, datetimeFormat), '] Done!'])
+
+%% Match Each Work Order with GPS Tracks
+
+% We will append GPS track information to work orders.
+parsedVehWorkOrderTable.sampIndicesGpsTracks ...
+    = cell(numOfVehWorkOrders, 1);
+
+%% Overview Figures
+% TODO: Generate an overview figure for each day's work orders. GPS samples
+% (dots) on the map are adjusted based how "stale" they are, e.g., by
+% transparency and marker size (the older the records, the bigger and more
+% transparent the corresponding markers will appear).
+%plot_google_map
 
 %% Clean Up
 
