@@ -284,14 +284,108 @@ disp(['[', datestr(now, datetimeFormat), '] Done!'])
 %     Elapsed time is 0.051813 seconds.
 %      Elapsed time is 0.013643 seconds.
 
+disp(' ')
+disp(['[', datestr(now, datetimeFormat), ...
+    '] Converting datetime to epoch time ...'])
+
 parsedGpsLocTable.unixTime = convertTo( ...
     parsedGpsLocTable.localDatetime, 'posixtime');
 parsedVehWorkOrderTable.unixTime = convertTo( ...
     parsedVehWorkOrderTable.localDatetime, 'posixtime');
 
-%% TODO: Group Work Orders by Work Order ID and Vehicle ID
-% Work orders in the same group are for the same activity. This step will
-% avoid unnecessary/repeated GPS sample searching.
+disp(['[', datestr(now, datetimeFormat), '] Done!'])
+
+%% Group Work Orders by Work Order ID and Vehicle ID
+% GPS tracks need to be, first, fetched based on the time range
+% (associated/indirectly determined by the work order ID) and the vehicle
+% ID, and then, broken into continuous tracks. Thus, it is easier to work
+% with "work order groups", where each group has all the work order entries
+% with the same work order ID and vehicle ID.
+% 
+% Work orders in the same group can be considered as "for the same
+% activity". This step will avoid unnecessary/repeated GPS sample
+% searching.
+
+disp(' ')
+disp(['[', datestr(now, datetimeFormat), ...
+    '] Group work orders into groups based on', ...
+    ' work order ID and vehicle ID ...'])
+
+% It is not clear how many work order groups we will get, but it is at
+% least the number of unique work order IDs. We will find work order
+% groups for each unique work order ID and concatenate the results.
+uniqueWOIds = unique(parsedVehWorkOrderTable.workOrderId);
+numOfUniqueWOIds = length(uniqueWOIds);
+
+% Cache the work order entry indices as row vectors for each found work
+% order group.
+cachedEntryIndicesInParsedVehWOT = cell(numOfUniqueWOIds, 1);
+
+cntWOG = 0;
+% For progress feedback.
+numOfProBarUpdates = 100;
+proBar = ProgressBar(floor(numOfUniqueWOIds/numOfProBarUpdates));
+proBarCnt = 0;
+for idxUniqueWOId = 1:numOfUniqueWOIds
+    curWOId = uniqueWOIds(idxUniqueWOId);
+    curEntryIndicesInParsedVehWOT = find( ...
+        parsedVehWorkOrderTable.workOrderId == curWOId);
+
+    curUniqueVehIds = unique( ...
+        parsedVehWorkOrderTable.vehId(curEntryIndicesInParsedVehWOT));
+
+    curNumOfUniqueVIDs = length(curUniqueVehIds);
+    cachedEntryIndicesInParsedVehWOT{idxUniqueWOId} ...
+        = cell(curNumOfUniqueVIDs, 1);
+    for curIdxUniqueVID = 1:curNumOfUniqueVIDs
+        % Found a new work order group.
+        cntWOG = cntWOG + 1;
+
+        curVID = curUniqueVehIds(curIdxUniqueVID);
+        cachedEntryIndicesInParsedVehWOT{idxUniqueWOId} ...
+            {curIdxUniqueVID} ...
+            = (curEntryIndicesInParsedVehWOT( ...
+            parsedVehWorkOrderTable.vehId( ...
+            curEntryIndicesInParsedVehWOT)==curVID))';
+    end
+
+    proBarCnt = proBarCnt + 1;
+    if mod(proBarCnt, numOfProBarUpdates) == 0
+        proBar.progress;
+    end
+end
+proBar.stop;
+
+% Save the results.
+numOfEntriesInParsedVehWOT = size(parsedVehWorkOrderTable, 1);
+parsedVehWorkOrderTable.idxWorkOrderGroup ...
+    = nan(numOfEntriesInParsedVehWOT, 1);
+indicesEntryInParsedVehWOT = cell(cntWOG, 1);
+
+cntSavedWOG = 0;
+proBar = ProgressBar(numOfUniqueWOIds);
+for idxUniqueWOId = 1:numOfUniqueWOIds
+    curNumOfWOGToSave ...
+        = length(cachedEntryIndicesInParsedVehWOT{idxUniqueWOId});
+
+    indicesEntryInParsedVehWOT( ...
+        (cntSavedWOG+1):(cntSavedWOG+curNumOfWOGToSave)) ...
+        = cachedEntryIndicesInParsedVehWOT{idxUniqueWOId};
+    
+    for curIdxWOGToSave = 1:curNumOfWOGToSave
+        parsedVehWorkOrderTable.idxWorkOrderGroup( ...
+            cachedEntryIndicesInParsedVehWOT{idxUniqueWOId} ...
+            {curIdxWOGToSave}) = cntSavedWOG+curIdxWOGToSave;
+    end
+
+    cntSavedWOG = cntSavedWOG + curNumOfWOGToSave;
+    proBar.progress;
+end
+proBar.stop;
+
+workOrderGroupTable = table('indicesEntryInParsedVehWOT');
+
+disp(['[', datestr(now, datetimeFormat), '] Done!'])
 
 %% Find GPS Tracks for Each Vehicle Work Order Group
 
