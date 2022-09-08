@@ -66,9 +66,6 @@ HOURS_BEFORE_WORK_DATE_TO_SEARCH = 24;
 % Flag to enable debug plot generation.
 FLAG_GEN_DEBUG_FIGS = true;
 
-% Controls the progress bar update frequency.
-numOfProBarUpdates = 100;
-
 %% Load Work Orders and GPS Tracks
 
 disp(' ')
@@ -130,9 +127,9 @@ disp(['    [', datestr(now, datetimeFormat), ...
 numOfGpsSamps = size(gpsLocTable, 1);
 vehIds = nan(numOfGpsSamps, 1);
 vehNames = cell(numOfGpsSamps, 1);
+
 % For progress feedback.
-proBar = ProgressBar(floor(numOfGpsSamps/numOfProBarUpdates));
-proBarCnt = 0;
+proBar = betterProBar(numOfGpsSamps);
 % Use 'ASSET_LABEL' when it is available because both vehicle ID and name
 % can be extracted. Switch to 'COMMISION_NUMBER' for vehicle ID if
 % necessary. As the last resort, if none of these fields are present, we
@@ -158,18 +155,16 @@ if ismember('ASSET_LABEL', gpsLocTable.Properties.VariableNames)
             originalAssetLabels{idxGpsSamp} ...
             ((curIdxFirstNonNumAssetLabel+1):end));
 
-        proBarCnt = proBarCnt + 1;
-        if mod(proBarCnt, numOfProBarUpdates) == 0
-            proBar.progress;
-        end
+        proBar.progress;
     end
 elseif ismember('COMMISION_NUMBER', gpsLocTable.Properties.VariableNames)
-    proBar.progress;
     vehIds = gpsLocTable.COMMISION_NUMBER;
 
     for idxGpsSamp = 1:numOfGpsSamps
         % TODO: veh name does not seem to be available.
         vehNames{idxGpsSamp} = '';
+
+        proBar.progress;
     end
 else
     % We will use the inventory information to deduce vehIds and vehNames
@@ -193,10 +188,7 @@ else
         % TODO: veh name does not seem to be available.
         vehNames{idxGpsSamp} = '';
 
-        proBarCnt = proBarCnt + 1;
-        if mod(proBarCnt, numOfProBarUpdates) == 0
-            proBar.progress;
-        end
+        proBar.progress;
     end
 end
 proBar.stop;
@@ -247,8 +239,7 @@ indicesMinusSignResName = strfind(originalResNames, '-');
 indicesMinusSignAct = strfind(originalActivities, '-');
 
 % For progress feedback.
-proBar = ProgressBar(floor(numOfVehWorkOrders/numOfProBarUpdates));
-proBarCnt = 0;
+proBar = betterProBar(numOfVehWorkOrders);
 for idxVehWorkOrder = 1:numOfVehWorkOrders
     curIdxFirstMinusSignResName ...
         = indicesMinusSignResName{idxVehWorkOrder}(1);
@@ -271,10 +262,7 @@ for idxVehWorkOrder = 1:numOfVehWorkOrders
         originalActivities{idxVehWorkOrder} ...
         ((curIdxFirstMinusSignAct+1):end));
 
-    proBarCnt = proBarCnt + 1;
-    if mod(proBarCnt, numOfProBarUpdates) == 0
-        proBar.progress;
-    end
+    proBar.progress;
 end
 proBar.stop;
 
@@ -364,10 +352,11 @@ numOfUniqueWOIds = length(uniqueWOIds);
 % order group.
 cachedEntryIndicesInParsedVehWOT = cell(numOfUniqueWOIds, 1);
 
+disp(['    [', datestr(now, datetimeFormat), ...
+    '] Identifying work order groups ...'])
 cntWOG = 0;
 % For progress feedback.
-proBar = ProgressBar(floor(numOfUniqueWOIds/numOfProBarUpdates));
-proBarCnt = 0;
+proBar = betterProBar(numOfUniqueWOIds);
 for idxUniqueWOId = 1:numOfUniqueWOIds
     curWOId = uniqueWOIds(idxUniqueWOId);
     curEntryIndicesInParsedVehWOT = find( ...
@@ -391,13 +380,12 @@ for idxUniqueWOId = 1:numOfUniqueWOIds
             curEntryIndicesInParsedVehWOT)==curVID))';
     end
 
-    proBarCnt = proBarCnt + 1;
-    if mod(proBarCnt, numOfProBarUpdates) == 0
-        proBar.progress;
-    end
+    proBar.progress;
 end
 proBar.stop;
 
+disp(['    [', datestr(now, datetimeFormat), ...
+    '] Creating work order groups ...'])
 % Save the results.
 numOfEntriesInParsedVehWOT = size(parsedVehWorkOrderTable, 1);
 parsedVehWorkOrderTable.idxWorkOrderGroup ...
@@ -405,7 +393,7 @@ parsedVehWorkOrderTable.idxWorkOrderGroup ...
 indicesEntryInParsedVehWOT = cell(cntWOG, 1);
 
 cntSavedWOG = 0;
-proBar = ProgressBar(numOfUniqueWOIds);
+proBar = betterProBar(numOfUniqueWOIds);
 for idxUniqueWOId = 1:numOfUniqueWOIds
     curNumOfWOGToSave ...
         = length(cachedEntryIndicesInParsedVehWOT{idxUniqueWOId});
@@ -421,11 +409,12 @@ for idxUniqueWOId = 1:numOfUniqueWOIds
     end
 
     cntSavedWOG = cntSavedWOG + curNumOfWOGToSave;
+
     proBar.progress;
 end
 proBar.stop;
 
-workOrderGroupTable = table('indicesEntryInParsedVehWOT');
+workOrderGroupTable = table(indicesEntryInParsedVehWOT);
 
 disp(['[', datestr(now, datetimeFormat), '] Done!'])
 
