@@ -59,9 +59,12 @@ DATETIME_FORMAT = 'yyyy-MM-dd HH:mm:ss';
 % Expected time zone.
 LOCAL_TIME_ZONE = 'America/Indianapolis';
 
-% Hours to search before the work order date for GPS records, just in case
-% night shifts are involved.
+% Hours to search before the start (00:00:00) of the work order date, just
+% in case, e.g., night shifts are involved.
 HOURS_BEFORE_WORK_DATE_TO_SEARCH = 24;
+% Hours to search before the end (24:00:00) of the work order date, just in
+% case, e.g., the work date is mislabeled.
+HOURS_AFTER_WORK_DATE_TO_SEARCH = 24;
 
 % Maximum allowed time gap in minutes between continuous activity/GPS
 % tracks.
@@ -69,6 +72,7 @@ MAX_ALLOWED_TIME_GAP_IN_MIN = 10;
 
 % Flag to enable debug plot generation.
 FLAG_GEN_DEBUG_FIGS = true;
+NUM_OF_ACT_TRACK_DEBUG_FIGS = 10;
 
 %% Load Work Orders and GPS Tracks
 
@@ -96,6 +100,7 @@ if ~exist('workOrderTable', 'var')
         'ResourceType', 'ResourceName', 'Route_Ref_'});
 end
 if ~exist('gpsLocTable', 'var')
+    disp(' ')
     disp(['    [', datestr(now, datetimeFormat), ...
         '] Loading GPS tracks ...'])
     gpsLocTable = readtable(pathToGpsLocCsv);
@@ -338,10 +343,9 @@ disp(' ')
 disp(['[', datestr(now, datetimeFormat), ...
     '] Converting datetime to epoch time ...'])
 
-parsedGpsLocTable.unixTime = convertTo( ...
-    parsedGpsLocTable.localDatetime, 'posixtime');
-parsedVehWorkOrderTable.unixTime = convertTo( ...
-    parsedVehWorkOrderTable.localDatetime, 'posixtime');
+parsedGpsLocTable.unixTime = posixtime(parsedGpsLocTable.localDatetime);
+parsedVehWorkOrderTable.unixTime = posixtime( ...
+    parsedVehWorkOrderTable.localDatetime);
 
 disp(['[', datestr(now, datetimeFormat), '] Done!'])
 
@@ -445,10 +449,11 @@ disp(' ')
 disp(['[', datestr(now, datetimeFormat), ...
     '] Searching for GPS tracks for work order groups ...'])
 
-if FLAG_GEN_DEBUG_FIGS
+flagGenDebugFigs = FLAG_GEN_DEBUG_FIGS;
+if flagGenDebugFigs
     % Generate a limited amount of debugging figures.
-    cnt = 0;
-    maxCntToStop = 10;
+    debugFigCnt = 0;
+    maxDebugFigCntToStop = NUM_OF_ACT_TRACK_DEBUG_FIGS;
 end
 
 numOfWorkOrderGroups = size(workOrderGroupTable, 1);
@@ -456,62 +461,107 @@ numOfWorkOrderGroups = size(workOrderGroupTable, 1);
 % For grouping GPS samples into continuous tracks.
 maxAllowedTimeGapInS = MAX_ALLOWED_TIME_GAP_IN_MIN*60;
 
-% For saving the results.
-activityTracksForWOGTable = table;
-activityTracksForWOGTable.sampIndicesInParsedGpsLocTable ...
-    = cell(numOfWorkOrderGroups, 1);
-[activityTracksForWOGTable.idxWorkOrderGroup, ...
-    activityTracksForWOGTable.idxParsedVehWorkOrder] ...
-    = deal(nan(numOfWorkOrderGroups, 1));
+% Cache the discovered activity tracks.
+numsOfActivityTracks = zeros(numOfWorkOrderGroups, 1);
+activityTracksAsSampIndicesInParsedGLT = cell(numOfWorkOrderGroups, 1);
 
-% For progress feedback.
-proBar = betterProBar(numOfWorkOrderGroups);
-for idxVehWOG = 1:numOfWorkOrderGroups
+% For progress feedback. We will get more updates because this procedure
+% takes a longer time to finish.
+proBar = betterProBar(numOfWorkOrderGroups, 1000);
+% Debugging notes: % 5435 % 5432: No GPS records. % 1:numOfWorkOrderGroups
+for idxWOG = 1:numOfWorkOrderGroups 
     curDate = parsedVehWorkOrderTable.localDatetime( ...
-        workOrderGroupTable.indicesEntryInParsedVehWOT{idxVehWOG}(1));
+        workOrderGroupTable.indicesEntryInParsedVehWOT{idxWOG}(1));
     curVehId = parsedVehWorkOrderTable.vehId( ...
-        workOrderGroupTable.indicesEntryInParsedVehWOT{idxVehWOG}(1));
+        workOrderGroupTable.indicesEntryInParsedVehWOT{idxWOG}(1));
 
-    % We will inspect a time range, including the start time but excluding
-    % the end time (24:00:00 of "today" or 00:00:00 of "tomorrow").
+    % We will inspect a time range, including the start date but excluding
+    % the end date (24:00:00 of "today" or 00:00:00 of "tomorrow").
     curDateStart = dateshift(curDate, 'start', 'day');
     curDateEnd = dateshift(curDate, 'end', 'day');
 
-    unixTimeWindowStart = curDateStart ...
+    datetimeWindowStart = curDateStart ...
         - hours(HOURS_BEFORE_WORK_DATE_TO_SEARCH);
-    unixTimeWindowEnd = curDateEnd;
+    datetimeWindowEnd = curDateEnd ...
+        + hours(HOURS_AFTER_WORK_DATE_TO_SEARCH);
+
+    % Comparing the Unix time numbers is slightly faster than comparing the
+    % corresponding datetime objects (4.950038 s vs 5.131865 s in the test
+    % case "idxVehWOG = 1:300").
+    unixTimeWindowStart = posixtime(datetimeWindowStart);
+    unixTimeWindowEnd = posixtime(datetimeWindowEnd);
 
     % Speed the search up by filtering out candidates step by step. First,
     % by vehicle ID.
     boolsIsCandidateGpsPt = (parsedGpsLocTable.vehId == curVehId);
     % Then, by the start time.
     boolsIsCandidateGpsPt(boolsIsCandidateGpsPt) = ...
-        parsedGpsLocTable.localDatetime(boolsIsCandidateGpsPt) ...
+        parsedGpsLocTable.unixTime(boolsIsCandidateGpsPt) ...
         >= unixTimeWindowStart;
     % At last, by the end time.
     boolsIsCandidateGpsPt(boolsIsCandidateGpsPt) = ...
-        parsedGpsLocTable.localDatetime(boolsIsCandidateGpsPt) ...
+        parsedGpsLocTable.unixTime(boolsIsCandidateGpsPt) ...
         < unixTimeWindowEnd;
 
-    curSampIndicesInParsedGpsLocTable = find(boolsIsCandidateGpsPt);
+    curSampIndicesInParsedGpsLocTable = (find(boolsIsCandidateGpsPt))';
 
-    % Retrieve the GPS samples accordingly.
-    curParsedGpsLocTable = parsedGpsLocTable( ...
-        curSampIndicesInParsedGpsLocTable, :);
+    if ~isempty(curSampIndicesInParsedGpsLocTable)
+        % Retrieve the GPS samples accordingly.
+        curParsedGpsLocTable = parsedGpsLocTable( ...
+            curSampIndicesInParsedGpsLocTable, :);
 
-    % Group GPS samples into continuous tracks.
+        % Group GPS samples into continuous tracks.
+        assert(issorted(curParsedGpsLocTable.unixTime), ...
+            'Fetched GPS samples should be sorted by time!')
 
-    if FLAG_GEN_DEBUG_FIGS
-        if ~isempty(curParsedGpsLocTable)
-            cnt = cnt+1;
+        curNumOfPts = size(curParsedGpsLocTable, 1);
+        curTimeGapsInS = curParsedGpsLocTable.unixTime(2:end) ...
+            - curParsedGpsLocTable.unixTime(1:(end-1));
+        assert(all(curTimeGapsInS>=0), ...
+            'All time gaps should be non-negative!')
 
+        curIndicesToBreakTrack = 2:curNumOfPts;
+        curIndicesToBreakTrack = curIndicesToBreakTrack( ...
+            curTimeGapsInS>maxAllowedTimeGapInS);
+
+
+        curNumOfBreaks = length(curIndicesToBreakTrack);
+        curNumOfActivityTracks = curNumOfBreaks + 1;
+
+        activityTracksAsSampIndicesInParsedGLT{idxWOG} ...
+            = cell(curNumOfActivityTracks, 1);
+
+        if isempty(curIndicesToBreakTrack)
+            activityTracksAsSampIndicesInParsedGLT{idxWOG}{1} ...
+                = curSampIndicesInParsedGpsLocTable;
+        else
+            trackStartIdx = 1;
+            for idxBreakPt = 1:curNumOfBreaks
+                curIdxToBreak = curIndicesToBreakTrack(idxBreakPt);
+
+                activityTracksAsSampIndicesInParsedGLT{idxWOG} ...
+                    {idxBreakPt} ...
+                    = curSampIndicesInParsedGpsLocTable( ...
+                    trackStartIdx:(curIdxToBreak-1));
+
+                trackStartIdx = curIdxToBreak;
+            end
+            activityTracksAsSampIndicesInParsedGLT{idxWOG} ...
+                {curNumOfActivityTracks} ...
+                = curSampIndicesInParsedGpsLocTable(trackStartIdx:end);
+        end
+
+        numsOfActivityTracks(idxWOG) = curNumOfActivityTracks;
+
+        if flagGenDebugFigs
             % TODO: Generate a debug figure to show the GPS points on a
             % map.
 
-        end
+            debugFigCnt = debugFigCnt+1;            
 
-        if (cnt == maxCntToStop)
-            break
+            if (debugFigCnt == maxDebugFigCntToStop)
+                flagGenDebugFigs = false;
+            end
         end
     end
 
@@ -519,8 +569,24 @@ for idxVehWOG = 1:numOfWorkOrderGroups
 end
 proBar.stop;
 
+
+
+
 % TODO: Save results.
-parsedVehWorkOrderTable.idxActivityTrack;
+totalNumOfActivityTracks = sum(numsOfActivityTracks);
+
+
+activityTracksForWOGTable = table;
+activityTracksForWOGTable.sampIndicesInParsedGpsLocTable ...
+    = cell(totalNumOfActivityTracks, 1);
+[activityTracksForWOGTable.idxWorkOrderGroup, ...
+    activityTracksForWOGTable.idxParsedVehWorkOrder] ...
+    = deal(nan(totalNumOfActivityTracks, 1));
+activityTracksForWOGTable.boolsEndInWorkDate ...
+    = false(totalNumOfActivityTracks, 1);
+
+
+% parsedVehWorkOrderTable.idxActivityTrack;
 
 disp(['[', datestr(now, datetimeFormat), '] Done!'])
 
