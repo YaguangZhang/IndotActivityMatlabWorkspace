@@ -76,6 +76,10 @@ MAX_ALLOWED_TIME_GAP_IN_MIN = 10;
 FLAG_GEN_DEBUG_FIGS = true;
 NUM_OF_ACT_TRACK_DEBUG_FIGS = 10;
 
+% Maximum allowed distance to a road for the GPS sample to be labeled as on
+% that road.
+MAX_ALLOWED_DIST_FROM_ROAD_IN_M = 100;
+
 %% Load Work Orders and GPS Tracks
 
 disp(' ')
@@ -157,10 +161,9 @@ else
 
         %   The road name is a string in the form like "S49". We use "S" as
         %   State, "I" as Interstate, "T" as Toll, and "U" as US.
-        gpsLocTable.roadName = cell(numOfGpsSamps, 1);
+        roadNames = cell(numOfGpsSamps, 1);
         % The mile marker and, for debugging, the distance to the road.
-        [gpsLocTable.mile, gpsLocTable.nearestDist] ...
-            = deal(nan(numOfGpsSamps, 1));
+        [miles, nearestDistsInM] = deal(nan(numOfGpsSamps, 1));
 
         numOfRawGpsRecords = size(gpsLocTable, 1);
 
@@ -184,20 +187,35 @@ else
             end
         end
         indotRoads(boolsIndotRoadsToIgnore) = [];
-        
+
         % For progress feedback.
         proBar = betterProBar(numOfGpsSamps);
+        lats = gpsLocTable.LATITUDE;
+        lons = gpsLocTable.LONGITUDE;
+        % Suppress warnings.
+        warning('off', 'GPS2MILEMARKER:noNearestRoadSeg')
+        % parfor can be used here, too. However, that does not speed thing
+        % up too much on the machine Artsy.
         for idxSamp = 1:numOfGpsSamps
             try
-                [gpsLocTable.roadName{idxSamp}, ...
-                    gpsLocTable.mile(idxSamp), ...
-                    ~, gpsLocTable.nearestDist(idxSamp)] ...
-                    = gpsCoor2MileMarker(gpsLocTable.LATITUDE(idxSamp), ...
-                    gpsLocTable.LONGITUDE(idxSamp));
+                [roadNames{idxSamp}, curMile, ~, curNearestDist] ...
+                    = gpsCoor2MileMarker(lats(idxSamp), ...
+                    lons(idxSamp));
             catch
                 % Fallback values.
-                gpsLocTable.roadName{idxSamp} = '';
+                curNearestDist = inf;
+                roadNames{idxSamp} = '';
             end
+
+            if (~isempty(curNearestDist)) ...
+                    && (curNearestDist <= MAX_ALLOWED_DIST_FROM_ROAD_IN_M)
+                miles(idxSamp) = curMile;
+                nearestDistsInM(idxSamp) = curNearestDist;
+            else
+                % Discard the results if the nearest road is too far away.
+                roadNames{idxSamp} = '';
+            end
+
             proBar.progress;
         end
         proBar.stop;
@@ -205,7 +223,12 @@ else
 
     disp(' ')
     disp(['    [', datestr(now, datetimeFormat), ...
-        '] Loading GPS tracks ...'])
+        '] Saving GPS tracks ...'])
+
+    gpsLocTable.roadName = roadNames;
+    gpsLocTable.mile = miles;
+    gpsLocTable.nearestDistInM = nearestDistsInM;
+
     save(absPathToCachedTables, 'workOrderTable', 'gpsLocTable');
 end
 

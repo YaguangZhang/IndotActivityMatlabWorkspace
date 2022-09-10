@@ -30,19 +30,34 @@ function [nearestSegs, nearestDist] ...
 % The side lenght of the nearby square area we'll search. If the bounding
 % box is in the square we are searching, we will treat the cooresponding
 % segments as nearby. To make sure we won't miss the road segment that the
-% point (X,Y) may be on, we will use twice the maximum segment length in
-% the INDOT road database as the side length for the nearby square that we
-% will search. The unit is in meters: 1 mile = 1609.344 meters.
-nearbySquSideLength = max([indotRoads.Shape_Leng])*2;
+% point (X,Y) may be on ...
+%   Option (1):
+%       We will use twice the maximum segment length in the INDOT road
+%       database as the side length for the nearby square that we will
+%       search. The INDOT road centerline dataset will give us over 162 km
+%       to search.
+%           nearbySquSideLength = max([indotRoads.Shape_Leng])*2;
+%   Option (2):
+%       A fixed big enough distance to search is used, e.g.,
+%           nearbySquSideLength = 1000;
+%
+% The unit is in meters: 1 mile = 1609.344 meters.
+%
+% Update 2220910: Use a hard-coded nearbySquSideLength.
+
+% To speed things up, we only consider the one-point case.
+assert(length(X)==1, 'Expecting one and only one point!')
+
+nearbySquSideLength = 1000;
 [Xmin, XMax, Ymin, YMax] = constructSquareLimits( ...
     X, Y, nearbySquSideLength);
 
 boundingBoxes = reshape([indotRoads.BoundingBox], 2, 2, []);
 nearestSegs = indotRoads(...
-    boundingBoxes(1,1,:) >= Xmin ...
-    & boundingBoxes(2,1,:) <= XMax ...
-    & boundingBoxes(1,2,:) >= Ymin ...
-    & boundingBoxes(2,2,:) <= YMax);
+    ~(boundingBoxes(1,1,:) > XMax ...
+    | boundingBoxes(2,1,:) < Xmin...
+    | boundingBoxes(1,2,:) > YMax ...
+    | boundingBoxes(2,2,:) < Ymin));
 
 % Calculate the distances from the qurrying location to these segments.
 distRoadSegs = zeros(length(nearestSegs),1);
@@ -56,7 +71,8 @@ for idxRoadSeg = 1:length(nearestSegs)
     ptsToKeep = [true; sum(P2XYs(2:end, :)==P2XYs(1:(end-1), :), 2) < 2];
     P2.x = P2XYs(ptsToKeep, 1);
     P2.y = P2XYs(ptsToKeep, 2);
-    
+
+    % min_dist_between_two_polygons is faster than p_poly_dist.
     distRoadSegs(idxRoadSeg) = ...
         min_dist_between_two_polygons(P1,P2,0);
 end

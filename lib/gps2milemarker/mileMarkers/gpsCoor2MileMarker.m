@@ -79,7 +79,8 @@ mile = nan;
 
 % If no nearest road segment is found, print an error.
 if isempty(nearestSegs)
-    warning('Couldn''t find the nearest road segment!');
+    warning('GPS2MILEMARKER:noNearestRoadSeg', ...
+        'Couldn''t find the nearest road segment!');
     return
 end
 
