@@ -96,4 +96,12 @@ catch err
     error(errorMsg);
 end
 
+% Directory to the INDOT mile marker and road centerline datasets.
+switch strtrim(curHostname)
+    case 'Artsy'
+        ABS_PATH_TO_ROADS = fullfile(ABS_PATH_TO_SHARED_FOLDER, '..', ...
+            '..', 'INDOT', '20210414_GpsToMilemarker', 'IndotDataSets');
+    otherwise
+        error(unknownComputerErrorId, unknownComputerErrorMsg);
+end
 % EOF

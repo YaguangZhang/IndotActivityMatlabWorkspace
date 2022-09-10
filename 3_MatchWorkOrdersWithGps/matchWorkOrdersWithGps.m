@@ -3,7 +3,9 @@
 %
 % Yaguang Zhang, Purdue, 08/12/2022
 
-clear; clc; close all; dbstop if error;
+clearvars -except workOrderTable ...
+    gpsLocTable indotRoads ROAD_PROJ indotMileMarkers MILE_MARKER_PROJ;
+clc; close all; dbstop if error;
 
 % Locate the Matlab workspace and save the current filename.
 cd(fileparts(mfilename('fullpath'))); cd('..'); addpath('lib');
@@ -80,64 +82,131 @@ disp(' ')
 disp(['[', datestr(now, datetimeFormat), ...
     '] Loading work orders and GPS tracks ...'])
 
-% For fast debugging, avoid reloading data if they are already loaded.
-if ~exist('workOrderTable', 'var')
+absPathToCachedTables = fullfile(pathToSaveResults, 'cachedTables.mat');
+if exist(absPathToCachedTables, 'file')
     disp(['    [', datestr(now, datetimeFormat), ...
-        '] Loading work orders ...'])
-    workOrderTable = readtable(pathToWorkOrderCsv);
-    workOrderTable = renamevars(workOrderTable, 'WO_', 'WO');
+        '] Raw data processed before. Loading cached results ...'])
+    load(absPathToCachedTables);
+else
+    % For fast debugging, avoid reloading data if they are already loaded.
+    if ~exist('workOrderTable', 'var')
+        disp(['    [', datestr(now, datetimeFormat), ...
+            '] Loading work orders ...'])
+        workOrderTable = readtable(pathToWorkOrderCsv);
+        workOrderTable = renamevars(workOrderTable, 'WO_', 'WO');
 
-    disp(['    [', datestr(now, datetimeFormat), ...
-        '] Converting time stamps to datetime objects ...'])
-    workOrderTable.WorkDatetime = ...
-        datetime(workOrderTable.WorkDate, ...
-        'InputFormat', INDOT_DATE_FORMAT, 'TimeZone', LOCAL_TIME_ZONE, ...
-        'Format', DATETIME_FORMAT);
+        disp(['    [', datestr(now, datetimeFormat), ...
+            '] Converting time stamps to datetime objects ...'])
+        workOrderTable.WorkDatetime = ...
+            datetime(workOrderTable.WorkDate, ...
+            'InputFormat', INDOT_DATE_FORMAT, 'TimeZone', LOCAL_TIME_ZONE, ...
+            'Format', DATETIME_FORMAT);
 
-    % Order work order entries.
-    workOrderTable = sortrows(workOrderTable, ...
-        {'WorkDatetime', 'WO', ...
-        'ResourceType', 'ResourceName', 'Route_Ref_'});
-end
-if ~exist('gpsLocTable', 'var')
+        % Order work order entries.
+        workOrderTable = sortrows(workOrderTable, ...
+            {'WorkDatetime', 'WO', ...
+            'ResourceType', 'ResourceName', 'Route_Ref_'});
+    end
+    if ~exist('gpsLocTable', 'var')
+        disp(' ')
+        disp(['    [', datestr(now, datetimeFormat), ...
+            '] Loading GPS tracks ...'])
+        gpsLocTable = readtable(pathToGpsLocCsv);
+
+        disp(['    [', datestr(now, datetimeFormat), ...
+            '] Parsing time stamps ...'])
+        indicesEndOfAmOrPmInLocalTimeStrings ...
+            = strfind(gpsLocTable.VEHICLE_TIMESTAMP, 'M ');
+        indicesEndOfAmOrPmInLocalTimeStrings ...
+            = vertcat(indicesEndOfAmOrPmInLocalTimeStrings{:});
+        indexEndOfAmOrPmInLocalTimeStrings ...
+            = indicesEndOfAmOrPmInLocalTimeStrings(1);
+
+        % Check the time string format.
+        assert(all(indicesEndOfAmOrPmInLocalTimeStrings ...
+            == indexEndOfAmOrPmInLocalTimeStrings), ...
+            'Inconsistent VEHICLE_TIMESTAMP format!')
+        % Check local time zone listed in the time string.
+        assert(all(contains( ...
+            gpsLocTable.VEHICLE_TIMESTAMP, upper(LOCAL_TIME_ZONE)) ...
+            ), 'Unexpected time zone found!')
+
+        % Convert time string to datetime for easier processing.
+        vehicleTimeStamps = vertcat(gpsLocTable.VEHICLE_TIMESTAMP{:});
+        vehicleTimeStamps = vehicleTimeStamps(:, ...
+            1:indexEndOfAmOrPmInLocalTimeStrings);
+
+        disp(['    [', datestr(now, datetimeFormat), ...
+            '] Converting time stamps to datetime objects ...'])
+        gpsLocTable.localDatetime = datetime(vehicleTimeStamps, ...
+            'InputFormat', INDOT_TIMESTR_FORMAT, ...
+            'TimeZone', LOCAL_TIME_ZONE, ...
+            'Format', DATETIME_FORMAT);
+
+        % Order GPS samples.
+        gpsLocTable = sortrows(gpsLocTable, ...
+            {'localDatetime', 'COMMISION_NUMBER'});
+    end
+
+    numOfGpsSamps = size(gpsLocTable, 1);
+
+    % Find road name and mile markers.
+    if ~isfield(gpsLocTable, 'roadName')
+        disp(['    [', datestr(now, datetimeFormat), ...
+            '] Converting GPS (lat, lon) samps to mile markers ...'])
+
+        %   The road name is a string in the form like "S49". We use "S" as
+        %   State, "I" as Interstate, "T" as Toll, and "U" as US.
+        gpsLocTable.roadName = cell(numOfGpsSamps, 1);
+        % The mile marker and, for debugging, the distance to the road.
+        [gpsLocTable.mile, gpsLocTable.nearestDist] ...
+            = deal(nan(numOfGpsSamps, 1));
+
+        numOfRawGpsRecords = size(gpsLocTable, 1);
+
+        loadIndotMileMarkers;
+        loadIndotRoads;
+        % To speed road name searching up, discard non-highway roads. We
+        % have the patterns below copied from getRoadNameFromRoadSeg.m.
+        regPats = {'(SR|State Rd|State Road)( |-|)(\d+)', ...
+            '(INTERSTATE HIGHWAY|INTERSTATE|I)( |-|)(\d+)', ...
+            '(US|USHY|US HWY|US HIGHWAY|United States Highway)( |-|)(\d+)'};
+        numOfIndotRoads = length(indotRoads);
+        boolsIndotRoadsToIgnore = false(1, numOfIndotRoads);
+        for idxRoad = 1:numOfIndotRoads
+            if isempty(regexpi(indotRoads(idxRoad).FULL_STREE, ...
+                    regPats{1}, 'once')) ...
+                    && isempty(regexpi(indotRoads(idxRoad).FULL_STREE, ...
+                    regPats{2}, 'once')) ...
+                    && isempty(regexpi(indotRoads(idxRoad).FULL_STREE, ...
+                    regPats{3}, 'once'))
+                boolsIndotRoadsToIgnore(idxRoad) = true;
+            end
+        end
+        indotRoads(boolsIndotRoadsToIgnore) = [];
+        
+        % For progress feedback.
+        proBar = betterProBar(numOfGpsSamps);
+        for idxSamp = 1:numOfGpsSamps
+            try
+                [gpsLocTable.roadName{idxSamp}, ...
+                    gpsLocTable.mile(idxSamp), ...
+                    ~, gpsLocTable.nearestDist(idxSamp)] ...
+                    = gpsCoor2MileMarker(gpsLocTable.LATITUDE(idxSamp), ...
+                    gpsLocTable.LONGITUDE(idxSamp));
+            catch
+                % Fallback values.
+                gpsLocTable.roadName{idxSamp} = '';
+            end
+            proBar.progress;
+        end
+        proBar.stop;
+    end
+
     disp(' ')
     disp(['    [', datestr(now, datetimeFormat), ...
         '] Loading GPS tracks ...'])
-    gpsLocTable = readtable(pathToGpsLocCsv);
-
-    disp(['    [', datestr(now, datetimeFormat), ...
-        '] Parsing time stamps ...'])
-    indicesEndOfAmOrPmInLocalTimeStrings ...
-        = strfind(gpsLocTable.VEHICLE_TIMESTAMP, 'M ');
-    indicesEndOfAmOrPmInLocalTimeStrings ...
-        = vertcat(indicesEndOfAmOrPmInLocalTimeStrings{:});
-    indexEndOfAmOrPmInLocalTimeStrings ...
-        = indicesEndOfAmOrPmInLocalTimeStrings(1);
-
-    % Check the time string format.
-    assert(all(indicesEndOfAmOrPmInLocalTimeStrings ...
-        == indexEndOfAmOrPmInLocalTimeStrings), ...
-        'Inconsistent VEHICLE_TIMESTAMP format!')
-    % Check local time zone listed in the time string.
-    assert(all( ...
-        contains(gpsLocTable.VEHICLE_TIMESTAMP, upper(LOCAL_TIME_ZONE)) ...
-        ), 'Unexpected time zone found!')
-
-    % Convert time string to datetime for easier processing.
-    vehicleTimeStamps = vertcat(gpsLocTable.VEHICLE_TIMESTAMP{:});
-    vehicleTimeStamps = vehicleTimeStamps(:, ...
-        1:indexEndOfAmOrPmInLocalTimeStrings);
-
-    disp(['    [', datestr(now, datetimeFormat), ...
-        '] Converting time stamps to datetime objects ...'])
-    gpsLocTable.localDatetime = datetime(vehicleTimeStamps, ...
-        'InputFormat', INDOT_TIMESTR_FORMAT, ...
-        'TimeZone', LOCAL_TIME_ZONE, ...
-        'Format', DATETIME_FORMAT);
-
-    % Order GPS samples.
-    gpsLocTable = sortrows(gpsLocTable, ...
-        {'localDatetime', 'COMMISION_NUMBER'});
+    save(absPathToCachedTables, 'workOrderTable', 'gpsLocTable');
 end
 
 disp(['[', datestr(now, datetimeFormat), '] Done!'])
@@ -154,7 +223,9 @@ disp(['    [', datestr(now, datetimeFormat), ...
 % Find vehicle IDs and names. Note that the ASSET_LABEL field may not be
 % available. If it is present, we will extract vehId accordingly.
 % Otherwise, we will "guess" the vehId based on other data sets.
-numOfGpsSamps = size(gpsLocTable, 1);
+if ~exist('numOfGpsSamps', 'var')
+    numOfGpsSamps = size(gpsLocTable, 1);
+end
 vehIds = nan(numOfGpsSamps, 1);
 vehNames = cell(numOfGpsSamps, 1);
 
@@ -236,6 +307,9 @@ parsedGpsLocTable.lat           = gpsLocTable.LATITUDE;
 parsedGpsLocTable.lon           = gpsLocTable.LONGITUDE;
 parsedGpsLocTable.speedMph      = gpsLocTable.SPEED_MILES_PER_HOUR;
 parsedGpsLocTable.heading       = gpsLocTable.VEHICLE_HEADING;
+gpsLocTable.roadName = gpsLocTable.roadName;
+gpsLocTable.mile = gpsLocTable.mile;
+gpsLocTable.nearestDist = gpsLocTable.nearestDist;
 
 disp(['[', datestr(now, datetimeFormat), '] Done!'])
 
@@ -469,7 +543,7 @@ activityTracksAsSampIndicesInParsedGLT = cell(numOfWorkOrderGroups, 1);
 % takes a longer time to finish.
 proBar = betterProBar(numOfWorkOrderGroups, 1000);
 % Debugging notes: % 5435 % 5432: No GPS records. % 1:numOfWorkOrderGroups
-for idxWOG = 1:numOfWorkOrderGroups 
+for idxWOG = 1:numOfWorkOrderGroups
     curDate = parsedVehWorkOrderTable.localDatetime( ...
         workOrderGroupTable.indicesEntryInParsedVehWOT{idxWOG}(1));
     curVehId = parsedVehWorkOrderTable.vehId( ...
@@ -557,7 +631,7 @@ for idxWOG = 1:numOfWorkOrderGroups
             % TODO: Generate a debug figure to show the GPS points on a
             % map.
 
-            debugFigCnt = debugFigCnt+1;            
+            debugFigCnt = debugFigCnt+1;
 
             if (debugFigCnt == maxDebugFigCntToStop)
                 flagGenDebugFigs = false;
