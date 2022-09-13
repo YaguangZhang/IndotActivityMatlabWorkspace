@@ -80,6 +80,40 @@ NUM_OF_ACT_TRACK_DEBUG_FIGS = 10;
 % that road.
 MAX_ALLOWED_DIST_FROM_ROAD_IN_M = 100;
 
+% Set this to true to preprocess all GPS samples for their road names and
+% mile markers.
+FLAG_PREPROCESS_GPS_FOR_ROADNAME_AND_MILEMARKER = false;
+
+%% Load IN Mile Markers and Road Centerlines
+
+disp(' ')
+disp(['[', datestr(now, datetimeFormat), ...
+    '] Loading IN mile markers and high way centerlines ...'])
+
+loadIndotMileMarkers;
+loadIndotRoads;
+
+% To speed road name searching up, discard non-highway roads. We have the
+% patterns below copied from getRoadNameFromRoadSeg.m.
+regPats = {'(SR|State Rd|State Road)( |-|)(\d+)', ...
+    '(INTERSTATE HIGHWAY|INTERSTATE|I)( |-|)(\d+)', ...
+    '(US|USHY|US HWY|US HIGHWAY|United States Highway)( |-|)(\d+)'};
+numOfIndotRoads = length(indotRoads);
+boolsIndotRoadsToIgnore = false(1, numOfIndotRoads);
+for idxRoad = 1:numOfIndotRoads
+    if isempty(regexpi(indotRoads(idxRoad).FULL_STREE, ...
+            regPats{1}, 'once')) ...
+            && isempty(regexpi(indotRoads(idxRoad).FULL_STREE, ...
+            regPats{2}, 'once')) ...
+            && isempty(regexpi(indotRoads(idxRoad).FULL_STREE, ...
+            regPats{3}, 'once'))
+        boolsIndotRoadsToIgnore(idxRoad) = true;
+    end
+end
+indotRoads(boolsIndotRoadsToIgnore) = [];
+
+disp(['[', datestr(now, datetimeFormat), '] Done!'])
+
 %% Load Work Orders and GPS Tracks
 
 disp(' ')
@@ -152,87 +186,39 @@ else
             {'localDatetime', 'COMMISION_NUMBER'});
     end
 
-    numOfGpsSamps = size(gpsLocTable, 1);
-
-    % Find road name and mile markers.
-    if ~isfield(gpsLocTable, 'roadName')
-        disp(['    [', datestr(now, datetimeFormat), ...
-            '] Converting GPS (lat, lon) samps to mile markers ...'])
-
-        %   The road name is a string in the form like "S49". We use "S" as
-        %   State, "I" as Interstate, "T" as Toll, and "U" as US.
-        roadNames = cell(numOfGpsSamps, 1);
-        % The mile marker and, for debugging, the distance to the road.
-        [miles, nearestDistsInM] = deal(nan(numOfGpsSamps, 1));
-
-        numOfRawGpsRecords = size(gpsLocTable, 1);
-
-        loadIndotMileMarkers;
-        loadIndotRoads;
-        % To speed road name searching up, discard non-highway roads. We
-        % have the patterns below copied from getRoadNameFromRoadSeg.m.
-        regPats = {'(SR|State Rd|State Road)( |-|)(\d+)', ...
-            '(INTERSTATE HIGHWAY|INTERSTATE|I)( |-|)(\d+)', ...
-            '(US|USHY|US HWY|US HIGHWAY|United States Highway)( |-|)(\d+)'};
-        numOfIndotRoads = length(indotRoads);
-        boolsIndotRoadsToIgnore = false(1, numOfIndotRoads);
-        for idxRoad = 1:numOfIndotRoads
-            if isempty(regexpi(indotRoads(idxRoad).FULL_STREE, ...
-                    regPats{1}, 'once')) ...
-                    && isempty(regexpi(indotRoads(idxRoad).FULL_STREE, ...
-                    regPats{2}, 'once')) ...
-                    && isempty(regexpi(indotRoads(idxRoad).FULL_STREE, ...
-                    regPats{3}, 'once'))
-                boolsIndotRoadsToIgnore(idxRoad) = true;
-            end
-        end
-        indotRoads(boolsIndotRoadsToIgnore) = [];
-
-        % For progress feedback.
-        proBar = betterProBar(numOfGpsSamps);
-        lats = gpsLocTable.LATITUDE;
-        lons = gpsLocTable.LONGITUDE;
-        % Suppress warnings.
-        warning('off', 'GPS2MILEMARKER:noNearestRoadSeg')
-        % parfor can be used here, too. However, that does not speed thing
-        % up too much on the machine Artsy.
-        for idxSamp = 1:numOfGpsSamps
-            try
-                [roadNames{idxSamp}, curMile, ~, curNearestDist] ...
-                    = gpsCoor2MileMarker(lats(idxSamp), ...
-                    lons(idxSamp));
-            catch
-                % Fallback values.
-                curNearestDist = inf;
-                roadNames{idxSamp} = '';
-            end
-
-            if (~isempty(curNearestDist)) ...
-                    && (curNearestDist <= MAX_ALLOWED_DIST_FROM_ROAD_IN_M)
-                miles(idxSamp) = curMile;
-                nearestDistsInM(idxSamp) = curNearestDist;
-            else
-                % Discard the results if the nearest road is too far away.
-                roadNames{idxSamp} = '';
-            end
-
-            proBar.progress;
-        end
-        proBar.stop;
-    end
-
     disp(' ')
     disp(['    [', datestr(now, datetimeFormat), ...
         '] Saving GPS tracks ...'])
-
-    gpsLocTable.roadName = roadNames;
-    gpsLocTable.mile = miles;
-    gpsLocTable.nearestDistInM = nearestDistsInM;
 
     save(absPathToCachedTables, 'workOrderTable', 'gpsLocTable');
 end
 
 disp(['[', datestr(now, datetimeFormat), '] Done!'])
+
+%% Preprocess GPS Samples for Road Names and Mile Markers
+
+% Find road name and mile markers.
+if FLAG_PREPROCESS_GPS_FOR_ROADNAME_AND_MILEMARKER ...
+        && (~isfield(gpsLocTable, 'roadName'))
+    disp(['    [', datestr(now, datetimeFormat), ...
+        '] Converting GPS (lat, lon) samps to mile markers ...'])
+
+    flagShowProgressBar = true;
+    [gpsLocTable.roadName, gpsLocTable.mile, ...
+        gpsLocTable.nearestDistInM] ...
+        = fetchRoadNameAndMileMarker( ...
+        gpsLocTable.LATITUDE, gpsLocTable.LONGITUDE, ...
+        MAX_ALLOWED_DIST_FROM_ROAD_IN_M, flagShowProgressBar);
+
+
+    disp(' ')
+    disp(['    [', datestr(now, datetimeFormat), ...
+        '] Saving road names and mile markers ...'])
+
+    save(absPathToCachedTables, 'workOrderTable', 'gpsLocTable');
+
+    disp(['[', datestr(now, datetimeFormat), '] Done!'])
+end
 
 %% Extracting and Formatting Needed Information - GPS
 
