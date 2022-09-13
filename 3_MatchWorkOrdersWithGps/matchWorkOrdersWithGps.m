@@ -13,9 +13,28 @@ curFileName = mfilename;
 
 prepareSimulationEnv;
 
+% Optional. If this date range is set, only work order groups in this range
+% (including both dates) will be analyzed. If it is not set (by commenting
+% out this line), all work order groups will be processed.
+DATE_RANGE_OF_INTEREST = datetime(2021, 1, [25,31], ...
+    'TimeZone', LOCAL_TIME_ZONE);
+
+% Create a label (and later a dedicated folder accordingly to hold the
+% results) for each different analysis time range.
+if exist(DATE_RANGE_OF_INTEREST, 'var')
+    DATETIME_FORMAT_LABEL = 'yyyyMMdd';
+    label = [datestr(DATE_RANGE_OF_INTEREST(1), ...
+        DATETIME_FORMAT_LABEL), ...
+        '_to_', datestr(DATE_RANGE_OF_INTEREST(2), ...
+        DATETIME_FORMAT_LABEL)];
+end
+
 % The absolute path to the folder for saving results.
+if ~exist('label', 'var')
+    label = 'ALL';
+end
 pathToSaveResults = fullfile(pwd, '..', ...
-    'PostProcessingResults', '3_GpsForWorkOrders');
+    'PostProcessingResults', '3_GpsForWorkOrders', label);
 if ~exist(pathToSaveResults, 'dir')
     mkdir(pathToSaveResults)
 end
@@ -63,14 +82,14 @@ LOCAL_TIME_ZONE = 'America/Indianapolis';
 
 % Hours to search before the start (00:00:00) of the work order date, just
 % in case, e.g., night shifts are involved.
-HOURS_BEFORE_WORK_DATE_TO_SEARCH = 24;
+HOURS_BEFORE_WORK_DATE_TO_SEARCH = 0;
 % Hours to search before the end (24:00:00) of the work order date, just in
 % case, e.g., the work date is mislabeled.
-HOURS_AFTER_WORK_DATE_TO_SEARCH = 24;
+HOURS_AFTER_WORK_DATE_TO_SEARCH = 0;
 
 % Maximum allowed time gap in minutes between continuous activity/GPS
 % tracks.
-MAX_ALLOWED_TIME_GAP_IN_MIN = 10;
+MAX_ALLOWED_TIME_GAP_IN_MIN = 60;
 
 % Flag to enable debug plot generation.
 FLAG_GEN_DEBUG_FIGS = true;
@@ -81,8 +100,9 @@ NUM_OF_ACT_TRACK_DEBUG_FIGS = 10;
 MAX_ALLOWED_DIST_FROM_ROAD_IN_M = 100;
 
 % Set this to true to preprocess all GPS samples for their road names and
-% mile markers.
-FLAG_PREPROCESS_GPS_FOR_ROADNAME_AND_MILEMARKER = false;
+% mile markers. TODO: update the work order processing procedure for the
+% case where the mile markers are not retrieved ahead of time.
+FLAG_PREPROCESS_GPS_FOR_ROADNAME_AND_MILEMARKER = true;
 
 %% Load IN Mile Markers and Road Centerlines
 
@@ -188,12 +208,43 @@ else
 
     disp(' ')
     disp(['    [', datestr(now, datetimeFormat), ...
-        '] Saving GPS tracks ...'])
+        '] Saving GPS tracks into a cache .mat file ...'])
 
     save(absPathToCachedTables, 'workOrderTable', 'gpsLocTable');
 end
 
 disp(['[', datestr(now, datetimeFormat), '] Done!'])
+
+%% Filtering Data by Time Range of Interest
+
+if exist('DATE_RANGE_OF_INTEREST', 'var')
+    disp(' ')
+    disp(['[', datestr(now, datetimeFormat), ...
+        '] Filtering records by time range of interest: ', ...
+        datestr(DATE_RANGE_OF_INTEREST(1)),' to ', ...
+        datestr(DATE_RANGE_OF_INTEREST(2)), ' ...'])
+
+    datetimeRangeOfInterest = [ ...
+        dateshift(DATE_RANGE_OF_INTEREST(1), 'start', 'day'), ...
+        dateshift(DATE_RANGE_OF_INTEREST(2), 'end', 'day')];
+
+    workOrderTable( ...
+        workOrderTable.WorkDatetime<datetimeRangeOfInterest(1) ...
+        | workOrderTable.WorkDatetime>datetimeRangeOfInterest(2), ...
+        :) = [];
+    gpsLocTable( ...
+        gpsLocTable.localDatetime<datetimeRangeOfInterest(1) ...
+        | gpsLocTable.localDatetime>datetimeRangeOfInterest(2), ...
+        :) = [];
+
+    disp(' ')
+    disp(['    [', datestr(now, datetimeFormat), ...
+        '] Updating GPS tracks in the cache .mat file ...'])
+
+    save(absPathToCachedTables, 'workOrderTable', 'gpsLocTable');
+
+    disp(['[', datestr(now, datetimeFormat), '] Done!'])
+end
 
 %% Preprocess GPS Samples for Road Names and Mile Markers
 
@@ -213,7 +264,7 @@ if FLAG_PREPROCESS_GPS_FOR_ROADNAME_AND_MILEMARKER ...
 
     disp(' ')
     disp(['    [', datestr(now, datetimeFormat), ...
-        '] Saving road names and mile markers ...'])
+        '] Updating GPS tracks in the cache .mat file ...'])
 
     save(absPathToCachedTables, 'workOrderTable', 'gpsLocTable');
 
@@ -551,10 +602,14 @@ numsOfActivityTracks = zeros(numOfWorkOrderGroups, 1);
 activityTracksAsSampIndicesInParsedGLT = cell(numOfWorkOrderGroups, 1);
 
 % For progress feedback. We will get more updates because this procedure
-% takes a longer time to finish.
+% takes a long time to finish.
 proBar = betterProBar(numOfWorkOrderGroups, 1000);
-% Debugging notes: % 5435 % 5432: No GPS records. % 1:numOfWorkOrderGroups
-for idxWOG = 1:numOfWorkOrderGroups
+% Debugging notes:
+%   - 5435
+%    - 5432: No GPS records
+%   - 24863, 24864 (For example work order # 20848444; veh # 63519)
+%    - 1:numOfWorkOrderGroups
+for idxWOG = 24863
     curDate = parsedVehWorkOrderTable.localDatetime( ...
         workOrderGroupTable.indicesEntryInParsedVehWOT{idxWOG}(1));
     curVehId = parsedVehWorkOrderTable.vehId( ...
