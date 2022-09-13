@@ -316,9 +316,11 @@ parsedGpsLocTable.lat           = gpsLocTable.LATITUDE;
 parsedGpsLocTable.lon           = gpsLocTable.LONGITUDE;
 parsedGpsLocTable.speedMph      = gpsLocTable.SPEED_MILES_PER_HOUR;
 parsedGpsLocTable.heading       = gpsLocTable.VEHICLE_HEADING;
-gpsLocTable.roadName = gpsLocTable.roadName;
-gpsLocTable.mile = gpsLocTable.mile;
-gpsLocTable.nearestDist = gpsLocTable.nearestDist;
+if isfield(gpsLocTable, 'roadName')
+    parsedGpsLocTable.roadName = gpsLocTable.roadName;
+    parsedGpsLocTable.mile = gpsLocTable.mile;
+    parsedGpsLocTable.nearestDist = gpsLocTable.nearestDist;
+end
 
 disp(['[', datestr(now, datetimeFormat), '] Done!'])
 
