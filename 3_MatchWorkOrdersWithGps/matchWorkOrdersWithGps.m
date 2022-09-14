@@ -13,15 +13,18 @@ curFileName = mfilename;
 
 prepareSimulationEnv;
 
+% Expected time zone.
+LOCAL_TIME_ZONE = 'America/Indianapolis';
+
 % Optional. If this date range is set, only work order groups in this range
 % (including both dates) will be analyzed. If it is not set (by commenting
 % out this line), all work order groups will be processed.
-DATE_RANGE_OF_INTEREST = datetime(2021, 1, [25,31], ...
+DATE_RANGE_OF_INTEREST = datetime(2021, 1, [31,31], ...
     'TimeZone', LOCAL_TIME_ZONE);
 
 % Create a label (and later a dedicated folder accordingly to hold the
 % results) for each different analysis time range.
-if exist(DATE_RANGE_OF_INTEREST, 'var')
+if exist('DATE_RANGE_OF_INTEREST', 'var')
     DATETIME_FORMAT_LABEL = 'yyyyMMdd';
     label = [datestr(DATE_RANGE_OF_INTEREST(1), ...
         DATETIME_FORMAT_LABEL), ...
@@ -29,7 +32,8 @@ if exist(DATE_RANGE_OF_INTEREST, 'var')
         DATETIME_FORMAT_LABEL)];
 end
 
-% The absolute path to the folder for saving results.
+% The absolute path to the folder for saving results. TODO: test the 'ALL'
+% case.
 if ~exist('label', 'var')
     label = 'ALL';
 end
@@ -77,9 +81,6 @@ INDOT_TIMESTR_FORMAT = 'dd-MMM-yy hh.mm.ss.SSSSSSSSS a';
 % Format to use for storing time as datetime objects in Matlab.
 DATETIME_FORMAT = 'yyyy-MM-dd HH:mm:ss';
 
-% Expected time zone.
-LOCAL_TIME_ZONE = 'America/Indianapolis';
-
 % Hours to search before the start (00:00:00) of the work order date, just
 % in case, e.g., night shifts are involved.
 HOURS_BEFORE_WORK_DATE_TO_SEARCH = 0;
@@ -93,7 +94,8 @@ MAX_ALLOWED_TIME_GAP_IN_MIN = 60;
 
 % Flag to enable debug plot generation.
 FLAG_GEN_DEBUG_FIGS = true;
-NUM_OF_ACT_TRACK_DEBUG_FIGS = 10;
+% We have one debug figure per work order group.
+NUM_OF_ACT_TRACK_DEBUG_FIGS = 100;
 
 % Maximum allowed distance to a road for the GPS sample to be labeled as on
 % that road.
@@ -255,12 +257,14 @@ if FLAG_PREPROCESS_GPS_FOR_ROADNAME_AND_MILEMARKER ...
         '] Converting GPS (lat, lon) samps to mile markers ...'])
 
     flagShowProgressBar = true;
+    % Suppress warnings.
+    flagSuppressWarns = true;
     [gpsLocTable.roadName, gpsLocTable.mile, ...
         gpsLocTable.nearestDistInM] ...
         = fetchRoadNameAndMileMarker( ...
         gpsLocTable.LATITUDE, gpsLocTable.LONGITUDE, ...
-        MAX_ALLOWED_DIST_FROM_ROAD_IN_M, flagShowProgressBar);
-
+        MAX_ALLOWED_DIST_FROM_ROAD_IN_M, ...
+        flagShowProgressBar, flagSuppressWarns);
 
     disp(' ')
     disp(['    [', datestr(now, datetimeFormat), ...
@@ -604,12 +608,12 @@ activityTracksAsSampIndicesInParsedGLT = cell(numOfWorkOrderGroups, 1);
 % For progress feedback. We will get more updates because this procedure
 % takes a long time to finish.
 proBar = betterProBar(numOfWorkOrderGroups, 1000);
-% Debugging notes:
+% Debugging notes (with all records):
 %   - 5435
 %    - 5432: No GPS records
 %   - 24863, 24864 (For example work order # 20848444; veh # 63519)
 %    - 1:numOfWorkOrderGroups
-for idxWOG = 24863
+for idxWOG = 1:numOfWorkOrderGroups
     curDate = parsedVehWorkOrderTable.localDatetime( ...
         workOrderGroupTable.indicesEntryInParsedVehWOT{idxWOG}(1));
     curVehId = parsedVehWorkOrderTable.vehId( ...
@@ -663,7 +667,6 @@ for idxWOG = 24863
         curIndicesToBreakTrack = 2:curNumOfPts;
         curIndicesToBreakTrack = curIndicesToBreakTrack( ...
             curTimeGapsInS>maxAllowedTimeGapInS);
-
 
         curNumOfBreaks = length(curIndicesToBreakTrack);
         curNumOfActivityTracks = curNumOfBreaks + 1;

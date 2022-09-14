@@ -1,6 +1,6 @@
 function [roadNames, miles, nearestDistsInM] ...
     = fetchRoadNameAndMileMarker(lats, lons, ...
-    MAX_ALLOWED_DIST_FROM_ROAD_IN_M, flagShowProgress)
+    MAX_ALLOWED_DIST_FROM_ROAD_IN_M, flagShowProgress, flagSuppressWarns)
 %FETCHROADNAMEANDMILEMARKER Fetch the road name and mile marker pair for
 %GPS coordinates stored in the input variables (lats, lons) one by one.
 %
@@ -15,6 +15,10 @@ function [roadNames, miles, nearestDistsInM] ...
 %   - flagShowProgress
 %     Default to false. Set this to true for a progress bar in the command
 %     line.
+%   - flagSuppressWarns
+%     Default to false. Set this to true to suppress warnings with IDs
+%     'GPS2MILEMARKER:noNearestRoadSeg' and
+%     'GPS2MILEMARKER:mutipleNearestSegsFound'.
 %
 % Outputs:
 %   - roadNames, miles
@@ -32,6 +36,9 @@ end
 if ~exist('flagShowProgress', 'var')
     flagShowProgress = false;
 end
+if ~exist('flagSuppressWarns', 'var')
+    flagSuppressWarns = false;
+end
 
 numOfGpsSamps = length(lats);
 assert(length(lats)==length(lons), ...
@@ -47,8 +54,10 @@ roadNames = cell(numOfGpsSamps, 1);
 % The mile marker and, for debugging, the distance to the road.
 [miles, nearestDistsInM] = deal(nan(numOfGpsSamps, 1));
 
-% Suppress warnings.
-warning('off', 'GPS2MILEMARKER:all')
+if flagSuppressWarns
+    warning('off', 'GPS2MILEMARKER:noNearestRoadSeg')
+    warning('off', 'GPS2MILEMARKER:mutipleNearestSegsFound')
+end
 
 % parfor can be used here, too. However, that does not speed thing up too
 % much on the machine Artsy. Also, if the IN mile marker or road
@@ -80,11 +89,14 @@ for idxSamp = 1:numOfGpsSamps
     end
 end
 
+if flagSuppressWarns
+    warning('on', 'GPS2MILEMARKER:noNearestRoadSeg')
+    warning('on', 'GPS2MILEMARKER:mutipleNearestSegsFound')
+end
+
 if flagShowProgress
     proBar.stop;
 end
-
-warning('on', 'GPS2MILEMARKER:all')
 
 end
 % EOF
