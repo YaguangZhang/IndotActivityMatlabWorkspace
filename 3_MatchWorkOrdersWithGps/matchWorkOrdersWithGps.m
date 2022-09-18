@@ -604,7 +604,7 @@ if flagGenDebugFigs
     debugFigCnt = 0;
     maxDebugFigCntToStop = NUM_OF_ACT_TRACK_DEBUG_FIGS;
 
-    debugFigSizeInPixel = [960, 720];
+    debugFigSizeInPixel = [1280, 720];
     % Adjust markers and line based on how old they are in this day.
     %   - Format:
     %     [Value at the start of the day, value at the end of the day].
@@ -755,7 +755,8 @@ for idxWOG = 1:numOfWorkOrderGroups
             allGpsLocTableForCurWOG = parsedGpsLocTable(...
                 [activityTracksAsSampIndicesInParsedGLT{idxWOG}{:}], ...
                 :);
-            uniqueRNs = unique([allGpsLocTableForCurWOG.roadName, '']);
+            uniqueRNs = unique([allGpsLocTableForCurWOG.roadName; ...
+                {''}]);
             assert(strcmp(uniqueRNs{1}, ''), ...
                 ['No matching road is not the first item ', ...
                 'in the road name list!'])
@@ -1024,6 +1025,9 @@ for idxWOG = 1:numOfWorkOrderGroups
                 '_', curFigName]);
             saveas(hFigMileOverTime, [curPathToSaveFig, '.fig']);
             saveas(hFigMileOverTime, [curPathToSaveFig, '.jpg']);
+
+            % Close the figures.
+            close all;
 
             debugFigCnt = debugFigCnt+1;
 
