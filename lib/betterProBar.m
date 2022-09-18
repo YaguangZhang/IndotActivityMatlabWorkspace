@@ -27,7 +27,7 @@ classdef betterProBar < handle
                 obj.numOfProBarUpdates = numOfLoops;
             end
 
-            obj.numOfLoopsPerUpdate = floor( ...
+            obj.numOfLoopsPerUpdate = ceil( ...
                 numOfLoops/obj.numOfProBarUpdates);
             obj.proBarCnt = 0;
 

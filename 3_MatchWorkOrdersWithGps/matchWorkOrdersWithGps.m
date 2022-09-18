@@ -94,7 +94,6 @@ MAX_ALLOWED_TIME_GAP_IN_MIN = 60;
 
 % Flag to enable debug plot generation.
 FLAG_GEN_DEBUG_FIGS = true;
-FLAG_GEN_DEBUG_FIGS_QUIETLY = true;
 % We have one debug figure per work order group.
 NUM_OF_ACT_TRACK_DEBUG_FIGS = 100;
 
@@ -118,10 +117,13 @@ strFmt = '%.1f';
 
 disp(' ')
 disp(['[', datestr(now, datetimeFormat), ...
-    '] Loading IN mile markers and high way centerlines ...'])
+    '] Loading IN mile markers and highway centerlines ...'])
 
 loadIndotMileMarkers;
 loadIndotRoads;
+
+disp(['    [', datestr(now, datetimeFormat), ...
+    '] Filtering out non-highway centerlines ...'])
 
 % To speed road name searching up, discard non-highway roads. We have the
 % patterns below copied from getRoadNameFromRoadSeg.m.
@@ -747,8 +749,10 @@ for idxWOG = 1:numOfWorkOrderGroups
             % curData and curVehId.
             curWOId = cur1stWO.workOrderId;
             curActId = cur1stWO.actId;
-            curActName = capitalize(lower(cur1stWO.actName{1}));
-            curVehName = capitalize(lower(cur1stWO.vehName{1}));
+            curActName = capitalize(lower(regexprep( ...
+                cur1stWO.actName{1}, ' +', ' ')));
+            curVehName = capitalize(lower(regexprep( ...
+                cur1stWO.vehName{1}, ' +', ' ')));
 
             % Fetch a list of road names encountered in this work order
             % group. Append the empty string road name (no matching road)
@@ -773,12 +777,12 @@ for idxWOG = 1:numOfWorkOrderGroups
             % Add continuous tracks one by one to the figures.
             hFigGpsOnMap = figure( ...
                 'Position', [0, 0, debugFigSizeInPixel], ...
-                'Visible', ~FLAG_GEN_DEBUG_FIGS_QUIETLY);
+                'Visible', ~FLAG_SILENT_FIGS);
             hold on; grid on; grid minor;
             xlabel('Longitude (Degree)'); ylabel('Latitude (Degree)')
             hFigMileOverTime = figure( ...
                 'Position', [0, 0, debugFigSizeInPixel], ...
-                'Visible', ~FLAG_GEN_DEBUG_FIGS_QUIETLY);
+                'Visible', ~FLAG_SILENT_FIGS);
             hold on; grid on; grid minor;
             ylabel('Mile Marker')
 
@@ -837,7 +841,11 @@ for idxWOG = 1:numOfWorkOrderGroups
                         alphaRange, interpQueryPt);
 
                     % A 3D view of the map.
-                    figure(hFigGpsOnMap);
+                    if FLAG_SILENT_FIGS
+                        set(0, 'CurrentFigure', hFigGpsOnMap);
+                    else
+                        figure(hFigGpsOnMap);
+                    end
                     scatter3(lonsToPlot(idxPt), latsToPlot(idxPt), ...
                         dateTimesToPlot(idxPt), ...
                         markerSize, 'o', ...
@@ -863,7 +871,11 @@ for idxWOG = 1:numOfWorkOrderGroups
                     end
 
                     % The mile marker over time plot.
-                    figure(hFigMileOverTime);
+                    if FLAG_SILENT_FIGS
+                        set(0, 'CurrentFigure', hFigMileOverTime);
+                    else
+                        figure(hFigMileOverTime);
+                    end
                     scatter(dateTimesToPlot(idxPt), milesToPlot(idxPt), ...
                         markerSize, 'o', ...
                         'MarkerFaceColor', color, ...
@@ -881,7 +893,11 @@ for idxWOG = 1:numOfWorkOrderGroups
 
                 % Color each road segment with consecutive GPS samples from
                 % the same road.
-                figure(hFigMileOverTime);
+                if FLAG_SILENT_FIGS
+                    set(0, 'CurrentFigure', hFigMileOverTime);
+                else
+                    figure(hFigMileOverTime);
+                end
                 [indicesStart, indicesEnd, roadNameIds] ...
                     = findConsecutiveSubSeqs(roadNameIdsToPlot);
                 numOfSegs = length(indicesStart);
@@ -960,8 +976,10 @@ for idxWOG = 1:numOfWorkOrderGroups
             % line (N/A) always shown separately.
             boolsSegsToHide = cellfun(@(s) isempty(s), ...
                 hsSegPatchCell(2:end));
-            uniqueRNLegendLabels([false; boolsSegsToHide]) = [];
-            hsSegPatchCell([false; boolsSegsToHide]) = [];
+            if any(boolsSegsToHide)
+                uniqueRNLegendLabels([false; boolsSegsToHide]) = [];
+                hsSegPatchCell([false; boolsSegsToHide]) = [];
+            end
             if isempty(uniqueRNLegendLabels{1})
                 uniqueRNLegendLabels{1} = '0 h';
             end
@@ -995,7 +1013,11 @@ for idxWOG = 1:numOfWorkOrderGroups
             title(titleToPlot);
 
             % Add a map background.
-            figure(hFigGpsOnMap);
+            if FLAG_SILENT_FIGS
+                set(0, 'CurrentFigure', hFigGpsOnMap);
+            else
+                figure(hFigGpsOnMap);
+            end
             title(titleToPlot);
             plot_google_map('MapType', 'streetmap', 'Alpha', mapAlpha);
 
@@ -1034,6 +1056,10 @@ for idxWOG = 1:numOfWorkOrderGroups
 
             if (debugFigCnt == maxDebugFigCntToStop)
                 flagGenDebugFigs = false;
+
+                % TODO: wait here. For now... there is nothing else to do
+                % after the debug figures are generated.
+                pause;
             end
         end
     end
