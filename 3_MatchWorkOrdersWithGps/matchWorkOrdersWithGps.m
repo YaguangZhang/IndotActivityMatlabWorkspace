@@ -613,8 +613,9 @@ if flagGenDebugFigs
     %     bigger/thicker/more transparent the cooresponding marker will be.
     lineWithRangeInPt = [10, 2]; % Ref: Matlab default to 0.5.
     markerSizeRangeInPt = [50, 10]; % Ref: Matlab default to 6.
-    alphaRange = [0, 1];
+    alphaRange = [0.25, 1];
     segPatchAlpha = 0.25;
+    mapAlpha = 0.4;
 
     % Use an exponential curve to adjust the visualization so that recent
     % samples are highlighted.
@@ -996,7 +997,7 @@ for idxWOG = 1:numOfWorkOrderGroups
             % Add a map background.
             figure(hFigGpsOnMap);
             title(titleToPlot);
-            plot_google_map('MapType', 'streetmap');
+            plot_google_map('MapType', 'streetmap', 'Alpha', mapAlpha);
 
             % Save the map figure.
             curFigName = 'Map';
