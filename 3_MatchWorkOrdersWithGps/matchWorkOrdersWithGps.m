@@ -24,8 +24,8 @@ DATE_RANGE_OF_INTEREST = datetime(2021, 1, [31,31], ...
 
 % Create a label (and later a dedicated folder accordingly to hold the
 % results) for each different analysis time range.
+DATETIME_FORMAT_LABEL = 'yyyyMMdd';
 if exist('DATE_RANGE_OF_INTEREST', 'var')
-    DATETIME_FORMAT_LABEL = 'yyyyMMdd';
     label = [datestr(DATE_RANGE_OF_INTEREST(1), ...
         DATETIME_FORMAT_LABEL), ...
         '_to_', datestr(DATE_RANGE_OF_INTEREST(2), ...
@@ -94,8 +94,14 @@ MAX_ALLOWED_TIME_GAP_IN_MIN = 60;
 
 % Flag to enable debug plot generation.
 FLAG_GEN_DEBUG_FIGS = true;
-% We have one debug figure per work order group.
-NUM_OF_ACT_TRACK_DEBUG_FIGS = 100;
+% We have one debug figure per work order group. This limit on the total
+% number of debug figures to generate is set mainly to avoid billing from
+% Google Maps.
+%   - Free tier:
+%     0–100,000    0.002 USD per each (2.00 USD per 1000)
+%   - Ref:
+% https://developers.google.com/maps/documentation/maps-static/usage-and-billing
+NUM_OF_ACT_TRACK_DEBUG_FIGS = 1000;
 
 % Maximum allowed distance to a road for the GPS sample to be labeled as on
 % that road.
@@ -624,8 +630,8 @@ if flagGenDebugFigs
     expFactorForMapping = 3;
     interpRangeForMapping = ([0,24]).^expFactorForMapping;
 
-    lineStyle = '-';
-    naLineStyle = '--';
+    LINE_STYLE = '-';
+    NA_LINE_STYLE = '--';
 end
 
 numOfWorkOrderGroups = size(workOrderGroupTable, 1);
@@ -754,9 +760,16 @@ for idxWOG = 1:numOfWorkOrderGroups
             curVehName = capitalize(lower(regexprep( ...
                 cur1stWO.vehName{1}, ' +', ' ')));
 
-
-            debugFixFileNamePrefix = ['WO_', num2str(curWOId), ...
-                '_VehID_', num2str(curVehId)];
+            % For easier information aggregation later, mark:
+            %   date, vehicle, work order
+            % in that particular order, because the same "date" covers
+            % multiple vehicles, while the save "vehicle" in that date may
+            % have multiple "work orders".
+            debugFixFileNamePrefix = [ ...
+                datestr(curDate, DATETIME_FORMAT_LABEL), ...
+                '_VehID_', num2str(curVehId), ...
+                '_WO_', num2str(curWOId) ...
+                ];
             curPathToSaveMapFig = fullfile(pathToSaveResults, ...
                 [debugFixFileNamePrefix, '_', 'Map']);
             curPathToSaveMap3DFig = fullfile(pathToSaveResults, ...
@@ -764,8 +777,23 @@ for idxWOG = 1:numOfWorkOrderGroups
             curPathToSaveMileOverTimeFig = fullfile(pathToSaveResults, ...
                 [debugFixFileNamePrefix, '_', 'MileMarkerOverTime']);
 
-            % Avoid plotting if the figure is already created.
-            if ~exist([curPathToSaveMileOverTimeFig, '.jpg'], 'file')
+            % Other versions of the mile marker over time plot.
+            curPathToSaveMileOverTimeFigNoGrey ...
+                = fullfile(pathToSaveResults, ...
+                [debugFixFileNamePrefix, '_', 'MileMarkerOverTimeNoGrey']);
+            curPathToSaveMileOverTimeFigSepRoads ...
+                = fullfile(pathToSaveResults, ...
+                [debugFixFileNamePrefix, '_', ...
+                'MileMarkerOverTimeSepRoads']);
+
+            % The .mat file to cache extracted information for this work
+            % order group.
+            curPathToSaveExtractedInfo = fullfile(pathToSaveResults, ...
+                [debugFixFileNamePrefix, '_', 'CachedResults.mat']);
+
+            % Avoid plotting if the last needed figure is already created.
+            if ~exist([curPathToSaveMileOverTimeFigSepRoads, '.jpg'], ...
+                    'file')
                 % Fetch a list of road names encountered in this work order
                 % group. Append the empty string road name (no matching
                 % road) to make sure it is always considered.
@@ -792,7 +820,7 @@ for idxWOG = 1:numOfWorkOrderGroups
                     'Position', [0, 0, debugFigSizeInPixel], ...
                     'Visible', ~FLAG_SILENT_FIGS);
                 hold on; grid on; grid minor;
-                xlabel('Longitude (Degree)'); 
+                xlabel('Longitude (Degree)');
                 ylabel('Latitude (Degree)')
                 hFigMileOverTime = figure( ...
                     'Position', [0, 0, debugFigSizeInPixel], ...
@@ -804,7 +832,9 @@ for idxWOG = 1:numOfWorkOrderGroups
                 numOfUniqueRNs = length(uniqueRNs);
                 [segLengthsInH, segLengthsInM] ...
                     = deal(zeros(numOfUniqueRNs, 1));
-                % Record the patch style for each road.
+                % Record the patch style for each road via their handles.
+                % Note that these patches are the colored background
+                % rectangles to indicate different roads.
                 hsSegPatchCell = cell(numOfUniqueRNs, 1);
                 % Record the aggregated work information for the legend
                 % labels.
@@ -830,8 +860,7 @@ for idxWOG = 1:numOfWorkOrderGroups
                         @(rn) find(strcmp(uniqueRNs, rn)), ...
                         roadNamesToPlot);
 
-                    % Color consecutive We will then plot samples one by
-                    % one.
+                    % We will plot GPS samples one by one.
                     numOfPtsToPlot = length(latsToPlot);
                     for idxPt = 1:numOfPtsToPlot
                         curDatetime = dateTimesToPlot(idxPt);
@@ -878,17 +907,19 @@ for idxWOG = 1:numOfWorkOrderGroups
                             if curRoadNameId ...
                                     == roadNameIdsToPlot(idxPt+1)
                                 colorForLine = color;
-                                lineStyleToUse = lineStyle;
+                                lineStyleToUse = LINE_STYLE;
                             else
                                 colorForLine = colorGrey;
-                                lineStyleToUse = naLineStyle;
+                                lineStyleToUse = NA_LINE_STYLE;
                             end
-                            plot3(lonsToPlot(idxPt:(idxPt+1)), ...
+                            hGreyLine = plot3( ...
+                                lonsToPlot(idxPt:(idxPt+1)), ...
                                 latsToPlot(idxPt:(idxPt+1)), ...
                                 dateTimesToPlot(idxPt:(idxPt+1)), ...
                                 lineStyleToUse, ...
                                 'Color', [colorForLine, alpha], ...
                                 'LineWidth', lineWidth);
+                            uistack(hGreyLine, 'bottom');
                         end
 
                         % The mile marker over time plot.
@@ -914,7 +945,8 @@ for idxWOG = 1:numOfWorkOrderGroups
                     end
 
                     % Color each road segment with consecutive GPS samples
-                    % from the same road.
+                    % from the same road via semi-tranparent rectangle
+                    % patches.
                     if FLAG_SILENT_FIGS
                         set(0, 'CurrentFigure', hFigMileOverTime);
                     else
@@ -1025,6 +1057,8 @@ for idxWOG = 1:numOfWorkOrderGroups
 
                 % Add a title with aggregated information.
                 dateStrFormat = 'yyyy/mm/dd';
+                curDetectedWorkInH = sum(segLengthsInH(2:end));
+                curDetectedWorkInM = sum(segLengthsInM(2:end));
                 titleToPlot = {[datestr(curDate, dateStrFormat), ...
                     ', WO #', num2str(curWOId), ...
                     ', Activity #', num2str(curActId), ...
@@ -1033,9 +1067,9 @@ for idxWOG = 1:numOfWorkOrderGroups
                     ['Reported Hours: ', ...
                     num2str(curActTotalHs, strFmt), ...
                     ', Detected Hours: ', ...
-                    num2str(sum(segLengthsInH(2:end)), strFmt), ...
+                    num2str(curDetectedWorkInH, strFmt), ...
                     ', Detected Miles: ', num2str(distdim( ...
-                    sum(segLengthsInM(2:end)), 'meters', 'miles' ...
+                    curDetectedWorkInM, 'meters', 'miles' ...
                     ), strFmt)]};
                 title(titleToPlot);
 
@@ -1064,8 +1098,209 @@ for idxWOG = 1:numOfWorkOrderGroups
                 saveas(hFigMileOverTime, ...
                     [curPathToSaveMileOverTimeFig, '.jpg']);
 
+                % Cache the x range for the mile over time plot.
+                if FLAG_SILENT_FIGS
+                    set(0, 'CurrentFigure', hFigMileOverTime);
+                else
+                    figure(hFigMileOverTime); %#ok<UNRCH>
+                end
+                curMileOverTimeFigXLimit = xlim;
+
                 % Close the figures.
                 close all;
+
+                % Save the extracted information into a .mat file.
+                save(curPathToSaveExtractedInfo, ...
+                    'uniqueRNs', 'segLengthsInH', 'segLengthsInM', ...
+                    'titleToPlot', 'uniqueRNLegendLabels', ...
+                    'curDate', 'curWOId', ...
+                    'curActId', 'curActName', ...
+                    'curVehId', 'curVehName', ...
+                    'curActTotalHs', ...
+                    'curDetectedWorkInH', 'curDetectedWorkInM', ...
+                    'curMileOverTimeFigXLimit');
+
+                % Recreate the mile marker over time plot, with grey dotted
+                % lines omitted.
+                hFigMileOverTimeNoGrey = figure( ...
+                    'Position', [0, 0, debugFigSizeInPixel], ...
+                    'Visible', ~FLAG_SILENT_FIGS);
+                hold on; grid on; grid minor;
+                ylabel('Mile Marker')
+
+                % Patch handles.
+                hsSegPatchCell = cell(numOfUniqueRNs, 1);
+
+                for idxActT = 1:curNumOfActivityTracks
+                    % Fetch GPS info.
+                    curActTrackParsedGLT = parsedGpsLocTable(...
+                        activityTracksAsSampIndicesInParsedGLT{idxWOG}...
+                        {idxActT}, :);
+
+                    % Show the GPS points on a map.
+                    latsToPlot = curActTrackParsedGLT.lat;
+                    lonsToPlot = curActTrackParsedGLT.lon;
+                    dateTimesToPlot ...
+                        = curActTrackParsedGLT.localDatetime;
+                    milesToPlot = curActTrackParsedGLT.mile;
+                    roadNamesToPlot = curActTrackParsedGLT.roadName;
+
+                    % Snap NaN mile values to -1 for visualization.
+                    milesToPlot(isnan(milesToPlot)) = -1;
+
+                    % Assign a temporary integer ID for each road name.
+                    roadNameIdsToPlot = cellfun( ...
+                        @(rn) find(strcmp(uniqueRNs, rn)), ...
+                        roadNamesToPlot);
+
+                    % We will plot GPS samples one by one.
+                    numOfPtsToPlot = length(latsToPlot);
+                    for idxPt = 1:numOfPtsToPlot
+                        curDatetime = dateTimesToPlot(idxPt);
+                        curRoadNameId = roadNameIdsToPlot(idxPt);
+
+                        % Assign a color to use based on the road names.
+                        % Reserve grey to the "no matching road" case (ID
+                        % #1).
+                        if curRoadNameId==1
+                            color = colorGrey;
+                        else
+                            color = colorOrder( ...
+                                mod(curRoadNameId, numOfColors)+1, :);
+                        end
+
+                        hoursAfterStartOfDay = hours( ...
+                            curDatetime - curDateStart);
+                        interpQueryPt = hoursAfterStartOfDay ...
+                            .^expFactorForMapping;
+
+                        markerSize = interp1(interpRangeForMapping, ...
+                            markerSizeRangeInPt, interpQueryPt);
+                        lineWidth = interp1(interpRangeForMapping, ...
+                            lineWithRangeInPt, interpQueryPt);
+                        alpha = interp1(interpRangeForMapping, ...
+                            alphaRange, interpQueryPt);
+
+                        % The mile marker over time plot.
+                        if FLAG_SILENT_FIGS
+                            set(0, 'CurrentFigure', ...
+                                hFigMileOverTimeNoGrey);
+                        else
+                            figure(hFigMileOverTimeNoGrey); %#ok<UNRCH>
+                        end
+                        scatter(dateTimesToPlot(idxPt), ...
+                            milesToPlot(idxPt), ...
+                            markerSize, 'o', ...
+                            'MarkerFaceColor', color, ...
+                            'MarkerEdgeColor', color, ...
+                            'MarkerFaceAlpha', alpha, ...
+                            'MarkerEdgeAlpha', alpha);
+                        if idxPt<numOfPtsToPlot
+                            % Connect this sample with the next one.
+                            if curRoadNameId ...
+                                    == roadNameIdsToPlot(idxPt+1)
+                                colorForLine = color;
+                                lineStyleToUse = LINE_STYLE;
+                                lineAlpha = alpha;
+                            else
+                                colorForLine = colorGrey;
+                                lineStyleToUse = NA_LINE_STYLE;
+                                lineAlpha = 0;
+                            end
+                            plot(dateTimesToPlot(idxPt:(idxPt+1)), ...
+                                milesToPlot(idxPt:(idxPt+1)), ...
+                                lineStyleToUse, ...
+                                'Color', [colorForLine, lineAlpha], ...
+                                'LineWidth', lineWidth);
+                        end
+                    end
+
+                    % Semi-tranparent rectangle patches for road segments.
+                    if FLAG_SILENT_FIGS
+                        set(0, 'CurrentFigure', hFigMileOverTimeNoGrey);
+                    else
+                        figure(hFigMileOverTimeNoGrey); %#ok<UNRCH>
+                    end
+                    [indicesStart, indicesEnd, roadNameIds] ...
+                        = findConsecutiveSubSeqs(roadNameIdsToPlot);
+                    numOfSegs = length(indicesStart);
+
+                    for idxS = 1:numOfSegs
+                        curIdxStart = indicesStart(idxS);
+                        curIdxEnd = indicesEnd(idxS);
+                        curRNId = roadNameIds(idxS);
+                        curRN = uniqueRNs{curRNId};
+
+                        if isempty(curRN)
+                            curRN = 'N/A';
+                        end
+
+                        % Assign color again using the same method for
+                        % finding colors of the markers/lines.
+                        if curRNId==1
+                            color = colorGrey;
+                        else
+                            color = colorOrder( ...
+                                mod(curRNId, numOfColors)+1, :);
+                        end
+
+                        pMinX = dateTimesToPlot(curIdxStart);
+                        pMaxX = dateTimesToPlot(curIdxEnd);
+                        pMinY = minMileV;
+                        pMaxY = maxMileV;
+                        hSegPatch = patch( ...
+                            [pMinX, pMinX, pMaxX, pMaxX], ...
+                            [pMinY, pMaxY, pMaxY, pMinY], ...
+                            color, 'LineStyle', 'none', ...
+                            'FaceAlpha', segPatchAlpha);
+                        uistack(hSegPatch, 'bottom');
+                        hsSegPatchCell{curRNId} = hSegPatch;
+
+                        % Add road name.
+                        curSegLengthInTime = pMaxX-pMinX;
+                        text(pMinX+curSegLengthInTime/2, pMinY, ...
+                            curRN, ...
+                            'Color', color, ...
+                            'HorizontalAlignment', 'center', ...
+                            'VerticalAlignment', 'bottom');
+                        text(pMinX+curSegLengthInTime/2, pMaxY, ...
+                            curRN, ...
+                            'Color', color, ...
+                            'HorizontalAlignment', 'center', ...
+                            'VerticalAlignment', 'top');
+                    end
+                end
+
+                % Add a lengend with aggregated information, with the first
+                % line (N/A) always shown separately.
+                if length(hsSegPatchCell)==1
+                    legend(hsSegPatchCell{1}, ...
+                        uniqueRNLegendLabels{1}, ...
+                        'Location', 'northeastoutside');
+                else
+                    hLeg = legend([hsSegPatchCell{2:end}], ...
+                        uniqueRNLegendLabels(2:end), ...
+                        'Location', 'northeastoutside');
+                    set(get(hLeg,'Title'), 'String', ...
+                        ['(Gray) ', uniqueRNLegendLabels{1}])
+                end
+                axis tight;
+
+                % Add a title with aggregated information.
+                title(titleToPlot);
+
+                % Save the mile marker figure.
+                saveas(hFigMileOverTimeNoGrey, ...
+                    [curPathToSaveMileOverTimeFigNoGrey, '.fig']);
+                saveas(hFigMileOverTimeNoGrey, ...
+                    [curPathToSaveMileOverTimeFigNoGrey, '.jpg']);
+
+                % Close the figures.
+                close all;
+
+                % A better version of the mile marker over time plot, with
+                % roads separated vertically.
+                %   TODO: curPathToSaveMileOverTimeFigSepRoads
             end
 
             debugFigCnt = debugFigCnt+1;
