@@ -1143,6 +1143,8 @@ for idxWOG = 1:numOfWorkOrderGroups
                 hFigMileOverTimeSepRoads = figure( ...
                     'Position', [0, 0, debugFigSizeInPixel], ...
                     'Visible', ~FLAG_SILENT_FIGS);
+                set(hFigMileOverTimeSepRoads, ...
+                    'DefaultAxesTitleFontWeight', 'bold');
                 % Set up tile layout figure grid, with one tile for each
                 % road.
                 num2Tiles = length(uniqueRNs);
@@ -1377,6 +1379,7 @@ for idxWOG = 1:numOfWorkOrderGroups
                         curTileIdx = tileIndicesForUniRs(curRNId);
 
                         nexttile(curTileIdx);
+                        axis manual;
                         curYLim = ylim;
                         hSegPatchSepRoads = patch( ...
                             [pMinX, pMinX, pMaxX, pMaxX], ...
@@ -1387,6 +1390,19 @@ for idxWOG = 1:numOfWorkOrderGroups
                         uistack(hSegPatchSepRoads, 'bottom');
                         hsSegPatchCellSepRoads{curRNId} ...
                             = hSegPatchSepRoads;
+
+                        % Add road name.
+                        curSegLengthInTime = pMaxX-pMinX;
+                        text(pMinX+curSegLengthInTime/2, curYLim(1), ...
+                            curRN, ...
+                            'Color', color, ...
+                            'HorizontalAlignment', 'center', ...
+                            'VerticalAlignment', 'bottom');
+                        text(pMinX+curSegLengthInTime/2, curYLim(2), ...
+                            curRN, ...
+                            'Color', color, ...
+                            'HorizontalAlignment', 'center', ...
+                            'VerticalAlignment', 'top');
                     end
                 end
 
@@ -1423,18 +1439,22 @@ for idxWOG = 1:numOfWorkOrderGroups
                 if length(hsSegPatchCellSepRoads)==1
                     hLeg = legend(hsSegPatchCellSepRoads{1}, ...
                         uniqueRNLegendLabels{1}, ...
-                        'Location', 'northeastoutside');
+                        'FontSize', 9);
                 else
                     hLeg = legend([hsSegPatchCellSepRoads{2:end}], ...
                         uniqueRNLegendLabels(2:end), ...
-                        'Location', 'northeastoutside');
+                        'FontSize', 9);
                     set(get(hLeg,'Title'), 'String', ...
                         ['(Gray) ', uniqueRNLegendLabels{1}])
                 end
                 hLeg.Layout.Tile = 'east';
 
-                % Add a title with aggregated information.
-                title(hTileLayoutMiOverTSepRs, titleToPlot);
+                % Add a title with aggregated information. Note that the
+                % title added by:
+                %    title(hTileLayoutMiOverTSepRs, titleToPlot);
+                % seems a little different.
+                nexttile(1);
+                title(titleToPlot, 'FontSize', 11);
 
                 % Save the mile marker figure.
                 saveas(hFigMileOverTimeNoGrey, ...
@@ -1450,8 +1470,13 @@ for idxWOG = 1:numOfWorkOrderGroups
                 % Close the figures.
                 close all;
 
-                % TODO: Create another SepRoads version plot with grey
-                % lines indicating GPS record gaps.
+                % Create another SepRoads version plot with grey lines
+                % indicating GPS record gaps.
+                if FLAG_SILENT_FIGS
+                    set(0, 'CurrentFigure', hFigMileOverTimeSepRoads);
+                else
+                    figure(hFigMileOverTimeSepRoads); %#ok<UNRCH>
+                end
 
 
             end
