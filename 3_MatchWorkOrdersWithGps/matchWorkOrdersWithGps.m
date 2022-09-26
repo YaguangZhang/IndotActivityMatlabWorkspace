@@ -1,6 +1,8 @@
 % MATCHWORKORDERSWITHGPS Based on vehicle ID and data from work orders,
 % find and analyze the corresponding GPS tracks.
 %
+% Developed using Matlab R2021b on Windows.
+%
 % Yaguang Zhang, Purdue, 08/12/2022
 
 clearvars -except workOrderTable ...
@@ -784,6 +786,10 @@ for idxWOG = 1:numOfWorkOrderGroups
             curPathToSaveMileOverTimeFigSepRoads ...
                 = fullfile(pathToSaveResults, ...
                 [debugFixFileNamePrefix, '_', ...
+                'MileMarkerOverTimeSepRoadsNoGrey']);
+            curPathToSaveMileOverTimeFigSepRoadsWithGrey ...
+                = fullfile(pathToSaveResults, ...
+                [debugFixFileNamePrefix, '_', ...
                 'MileMarkerOverTimeSepRoads']);
 
             % The .mat file to cache extracted information for this work
@@ -792,8 +798,8 @@ for idxWOG = 1:numOfWorkOrderGroups
                 [debugFixFileNamePrefix, '_', 'CachedResults.mat']);
 
             % Avoid plotting if the last needed figure is already created.
-            if ~exist([curPathToSaveMileOverTimeFigSepRoads, '.jpg'], ...
-                    'file')
+            if ~exist([curPathToSaveMileOverTimeFigSepRoadsWithGrey, ...
+                    '.jpg'], 'file')
                 % Fetch a list of road names encountered in this work order
                 % group. Append the empty string road name (no matching
                 % road) to make sure it is always considered.
@@ -1127,9 +1133,57 @@ for idxWOG = 1:numOfWorkOrderGroups
                     'Visible', ~FLAG_SILENT_FIGS);
                 hold on; grid on; grid minor;
                 ylabel('Mile Marker')
+                % Patch handles.
+                hsSegPatchCellNoGrey = cell(numOfUniqueRNs, 1);
+
+                % A better version of the mile marker over time plot, with
+                % (1) road plots (patchs, dots, and lines) separated
+                % vertically and (2) legend item ordered by detected work
+                % hours.
+                hFigMileOverTimeSepRoads = figure( ...
+                    'Position', [0, 0, debugFigSizeInPixel], ...
+                    'Visible', ~FLAG_SILENT_FIGS);
+                % Set up tile layout figure grid, with one tile for each
+                % road.
+                num2Tiles = length(uniqueRNs);
+                hTileLayoutMiOverTSepRs = tiledlayout(num2Tiles, 1, ...
+                    'Padding', 'tight', 'TileSpacing', 'tight');
+
+                % Construct the vectors to map between tile indices and
+                % road indices.
+                [~, uniRIndicesForTs] = sort( ...
+                    segLengthsInH(2:end), 'descend');
+                uniRIndicesForTs = uniRIndicesForTs + 1;
+                uniRIndicesForTs = [uniRIndicesForTs; 1]; %#ok<AGROW>
+
+                tileIndicesForUniRs = [(1:num2Tiles)', uniRIndicesForTs];
+                tileIndicesForUniRs = sortrows(tileIndicesForUniRs, 2);
+                tileIndicesForUniRs = tileIndicesForUniRs(:,1);
 
                 % Patch handles.
-                hsSegPatchCell = cell(numOfUniqueRNs, 1);
+                hsSegPatchCellSepRoads = cell(numOfUniqueRNs, 1);
+
+                % Adjust subfigure appearance.
+                for idxTile = 1:num2Tiles
+                    curUniRIdx = uniRIndicesForTs(idxTile);
+                    if curUniRIdx == 1
+                        curUniRN = 'Unknown';
+                    else
+                        curUniRN = uniqueRNs{curUniRIdx};
+                    end
+
+                    nexttile;
+                    hold on; grid on; grid minor;
+                    % Force using datetime for x axis.
+                    plot(curMileOverTimeFigXLimit, [nan nan]);
+                    xlim(curMileOverTimeFigXLimit);
+                    ylabel({curUniRN, 'Mile Marker'});
+
+                    % No need to show x ticks except in the bottom tile.
+                    if idxTile~=num2Tiles
+                        xticklabels([]);
+                    end
+                end
 
                 for idxActT = 1:curNumOfActivityTracks
                     % Fetch GPS info.
@@ -1213,14 +1267,49 @@ for idxWOG = 1:numOfWorkOrderGroups
                                 'Color', [colorForLine, lineAlpha], ...
                                 'LineWidth', lineWidth);
                         end
+
+                        % For the version with roads vertically separated,
+                        % we need to plot into the right tile.
+                        if FLAG_SILENT_FIGS
+                            set(0, 'CurrentFigure', ...
+                                hFigMileOverTimeSepRoads);
+                        else
+                            figure(hFigMileOverTimeSepRoads); %#ok<UNRCH>
+                        end
+                        curTileIdx = tileIndicesForUniRs(curRoadNameId);
+
+                        nexttile(curTileIdx);
+                        scatter(dateTimesToPlot(idxPt), ...
+                            milesToPlot(idxPt), ...
+                            markerSize, 'o', ...
+                            'MarkerFaceColor', color, ...
+                            'MarkerEdgeColor', color, ...
+                            'MarkerFaceAlpha', alpha, ...
+                            'MarkerEdgeAlpha', alpha);
+                        if idxPt<numOfPtsToPlot
+                            % Connect this sample with the next one.
+                            if curRoadNameId ...
+                                    == roadNameIdsToPlot(idxPt+1)
+                                % Same tile.
+                                colorForLine = color;
+                                lineStyleToUse = LINE_STYLE;
+                                lineAlpha = alpha;
+
+                                plot(dateTimesToPlot(idxPt:(idxPt+1)), ...
+                                    milesToPlot(idxPt:(idxPt+1)), ...
+                                    lineStyleToUse, ...
+                                    'Color', [colorForLine, lineAlpha], ...
+                                    'LineWidth', lineWidth);
+                            else
+                                % Different tiles. We have to wait until
+                                % all dots are added so that the axes are
+                                % fixed (in terms of xlim and ylim) to add
+                                % lines via command annotation.
+                            end
+                        end
                     end
 
                     % Semi-tranparent rectangle patches for road segments.
-                    if FLAG_SILENT_FIGS
-                        set(0, 'CurrentFigure', hFigMileOverTimeNoGrey);
-                    else
-                        figure(hFigMileOverTimeNoGrey); %#ok<UNRCH>
-                    end
                     [indicesStart, indicesEnd, roadNameIds] ...
                         = findConsecutiveSubSeqs(roadNameIdsToPlot);
                     numOfSegs = length(indicesStart);
@@ -1248,13 +1337,21 @@ for idxWOG = 1:numOfWorkOrderGroups
                         pMaxX = dateTimesToPlot(curIdxEnd);
                         pMinY = minMileV;
                         pMaxY = maxMileV;
-                        hSegPatch = patch( ...
+
+                        if FLAG_SILENT_FIGS
+                            set(0, 'CurrentFigure', ...
+                                hFigMileOverTimeNoGrey);
+                        else
+                            figure(hFigMileOverTimeNoGrey); %#ok<UNRCH>
+                        end
+
+                        hSegPatchNoGrey = patch( ...
                             [pMinX, pMinX, pMaxX, pMaxX], ...
                             [pMinY, pMaxY, pMaxY, pMinY], ...
                             color, 'LineStyle', 'none', ...
                             'FaceAlpha', segPatchAlpha);
-                        uistack(hSegPatch, 'bottom');
-                        hsSegPatchCell{curRNId} = hSegPatch;
+                        uistack(hSegPatchNoGrey, 'bottom');
+                        hsSegPatchCellNoGrey{curRNId} = hSegPatchNoGrey;
 
                         % Add road name.
                         curSegLengthInTime = pMaxX-pMinX;
@@ -1268,17 +1365,44 @@ for idxWOG = 1:numOfWorkOrderGroups
                             'Color', color, ...
                             'HorizontalAlignment', 'center', ...
                             'VerticalAlignment', 'top');
+
+                        % For the version with roads vertically separated,
+                        % we need to plot into the right tile.
+                        if FLAG_SILENT_FIGS
+                            set(0, 'CurrentFigure', ...
+                                hFigMileOverTimeSepRoads);
+                        else
+                            figure(hFigMileOverTimeSepRoads); %#ok<UNRCH>
+                        end
+                        curTileIdx = tileIndicesForUniRs(curRNId);
+
+                        nexttile(curTileIdx);
+                        curYLim = ylim;
+                        hSegPatchSepRoads = patch( ...
+                            [pMinX, pMinX, pMaxX, pMaxX], ...
+                            [curYLim(1), curYLim(2), ...
+                            curYLim(2), curYLim(1)], ...
+                            color, 'LineStyle', 'none', ...
+                            'FaceAlpha', segPatchAlpha);
+                        uistack(hSegPatchSepRoads, 'bottom');
+                        hsSegPatchCellSepRoads{curRNId} ...
+                            = hSegPatchSepRoads;
                     end
                 end
 
                 % Add a lengend with aggregated information, with the first
                 % line (N/A) always shown separately.
-                if length(hsSegPatchCell)==1
-                    legend(hsSegPatchCell{1}, ...
+                if FLAG_SILENT_FIGS
+                    set(0, 'CurrentFigure', hFigMileOverTimeNoGrey);
+                else
+                    figure(hFigMileOverTimeNoGrey); %#ok<UNRCH>
+                end
+                if length(hsSegPatchCellNoGrey)==1
+                    legend(hsSegPatchCellNoGrey{1}, ...
                         uniqueRNLegendLabels{1}, ...
                         'Location', 'northeastoutside');
                 else
-                    hLeg = legend([hsSegPatchCell{2:end}], ...
+                    hLeg = legend([hsSegPatchCellNoGrey{2:end}], ...
                         uniqueRNLegendLabels(2:end), ...
                         'Location', 'northeastoutside');
                     set(get(hLeg,'Title'), 'String', ...
@@ -1289,18 +1413,47 @@ for idxWOG = 1:numOfWorkOrderGroups
                 % Add a title with aggregated information.
                 title(titleToPlot);
 
+                % Add a lengend with aggregated information, with the first
+                % line (N/A) always shown separately.
+                if FLAG_SILENT_FIGS
+                    set(0, 'CurrentFigure', hFigMileOverTimeSepRoads);
+                else
+                    figure(hFigMileOverTimeSepRoads); %#ok<UNRCH>
+                end
+                if length(hsSegPatchCellSepRoads)==1
+                    hLeg = legend(hsSegPatchCellSepRoads{1}, ...
+                        uniqueRNLegendLabels{1}, ...
+                        'Location', 'northeastoutside');
+                else
+                    hLeg = legend([hsSegPatchCellSepRoads{2:end}], ...
+                        uniqueRNLegendLabels(2:end), ...
+                        'Location', 'northeastoutside');
+                    set(get(hLeg,'Title'), 'String', ...
+                        ['(Gray) ', uniqueRNLegendLabels{1}])
+                end
+                hLeg.Layout.Tile = 'east';
+
+                % Add a title with aggregated information.
+                title(hTileLayoutMiOverTSepRs, titleToPlot);
+
                 % Save the mile marker figure.
                 saveas(hFigMileOverTimeNoGrey, ...
                     [curPathToSaveMileOverTimeFigNoGrey, '.fig']);
                 saveas(hFigMileOverTimeNoGrey, ...
                     [curPathToSaveMileOverTimeFigNoGrey, '.jpg']);
 
+                saveas(hFigMileOverTimeSepRoads, ...
+                    [curPathToSaveMileOverTimeFigSepRoads, '.fig']);
+                saveas(hFigMileOverTimeSepRoads, ...
+                    [curPathToSaveMileOverTimeFigSepRoads, '.jpg']);
+
                 % Close the figures.
                 close all;
 
-                % A better version of the mile marker over time plot, with
-                % roads separated vertically.
-                %   TODO: curPathToSaveMileOverTimeFigSepRoads
+                % TODO: Create another SepRoads version plot with grey
+                % lines indicating GPS record gaps.
+
+
             end
 
             debugFigCnt = debugFigCnt+1;
@@ -1319,8 +1472,8 @@ for idxWOG = 1:numOfWorkOrderGroups
 end
 proBar.stop;
 
-% % TODO: Save results. totalNumOfActivityTracks =
-% sum(numsOfActivityTracks);
+% % TODO: Save results.
+%   totalNumOfActivityTracks = sum(numsOfActivityTracks);
 %
 % activityTracksForWOGTable = table;
 %  activityTracksForWOGTable.sampIndicesInParsedGpsLocTable ...
