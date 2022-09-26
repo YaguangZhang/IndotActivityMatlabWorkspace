@@ -1441,8 +1441,18 @@ for idxWOG = 1:numOfWorkOrderGroups
                         uniqueRNLegendLabels{1}, ...
                         'FontSize', 9);
                 else
-                    hLeg = legend([hsSegPatchCellSepRoads{2:end}], ...
-                        uniqueRNLegendLabels(2:end), ...
+                    hsSegPatchCellSepRsToShow ...
+                        = [hsSegPatchCellSepRoads{2:end}];
+                    uniRNLegLabelsToShow = uniqueRNLegendLabels(2:end);
+                    segLengthsInHToShow = segLengthsInH(2:end);
+                    segLengthsInHToShow = segLengthsInHToShow( ...
+                        segLengthsInHToShow~=0);
+                    [~, patchOrdersToShow] = sort( ...
+                        segLengthsInHToShow, 'descend');
+
+                    hLeg = legend( ...
+                        hsSegPatchCellSepRsToShow(patchOrdersToShow), ...
+                        uniRNLegLabelsToShow(patchOrdersToShow), ...
                         'FontSize', 9);
                     set(get(hLeg,'Title'), 'String', ...
                         ['(Gray) ', uniqueRNLegendLabels{1}])
@@ -1467,9 +1477,6 @@ for idxWOG = 1:numOfWorkOrderGroups
                 saveas(hFigMileOverTimeSepRoads, ...
                     [curPathToSaveMileOverTimeFigSepRoads, '.jpg']);
 
-                % Close the figures.
-                close all;
-
                 % Create another SepRoads version plot with grey lines
                 % indicating GPS record gaps.
                 if FLAG_SILENT_FIGS
@@ -1479,6 +1486,9 @@ for idxWOG = 1:numOfWorkOrderGroups
                 end
 
 
+
+                % Close the figures.
+                close all;
             end
 
             debugFigCnt = debugFigCnt+1;
