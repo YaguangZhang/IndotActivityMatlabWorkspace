@@ -1144,7 +1144,9 @@ for idxWOG = 1:numOfWorkOrderGroups
                     'Position', [0, 0, debugFigSizeInPixel], ...
                     'Visible', ~FLAG_SILENT_FIGS);
                 % Set up tile layout figure grid, with one tile for each
-                % road.
+                % road. TODO: Adjust tile height based on data range (could
+                % be done by assigning way more than enough tiles, e.g.,
+                % 100, and use a range of them for each road).
                 num2Tiles = length(uniqueRNs);
                 hTileLayoutMiOverTSepRs = tiledlayout(num2Tiles, 1, ...
                     'Padding', 'tight', 'TileSpacing', 'tight');
