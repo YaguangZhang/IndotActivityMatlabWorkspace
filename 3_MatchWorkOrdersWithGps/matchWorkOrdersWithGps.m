@@ -1645,8 +1645,238 @@ for idxWOG = 1:numOfWorkOrderGroups
             if (debugFigCnt == maxDebugFigCntToStop)
                 flagGenDebugFigs = false;
 
-                % TODO: wait here. For now... there is nothing else to do
-                % after the debug figures are generated.
+                %% Generate a work order verification report.
+                reportDateFormat = DATETIME_FORMAT_LABEL;
+                reportDigitsAfterDecPt = 2;
+                delimiterForWOIds = ' & ';
+                % We will add 'MatchingScore' and 'Note' by comparing
+                %       delta = detected total hours - reported total hours
+                % and the two thresholds below.
+                %   - delta > maxAllowedMismatchInH
+                %     Warning: Under-reporting... Missing Work Orders?
+                %   - delta < -maxAllowedMismatchInH
+                %     Warning: Over-reporting... Missing GPS records?
+                % MatchingScore will be zero for above cases. Otherwise,
+                % the score will be linearly interpolated based on
+                % (abs(delta), score) pairs:
+                %    (0, 100%)
+                %     (mismatchInHFor90PercScore, 90%)
+                %    (maxAllowedMismatchInH, 0%).
+                UNDER_REP_WARNING = ...
+                    'Warning: Under-reporting';
+                OVER_REP_WARNING = ...
+                    'Warning: Over-reporting';
+
+                mismatchInHFor90PercScore = 1; % => 90% score.
+                maxAllowedMismatchInH = 3; % => 0% score.
+                scoreFct = @(delta) interp1( ...
+                    [0, mismatchInHFor90PercScore, ...
+                    maxAllowedMismatchInH], ...
+                    [1, 0.9, 0], abs(delta));
+
+                % First, scan and load all extracted info into a table.
+                dirCacheFiles = dir(fullfile(pathToSaveResults, ...
+                    '*_CachedResults.mat'));
+                numOfCacheFs = length(dirCacheFiles);
+
+                % Only load the needed info for the report. Not needed for
+                % now:
+                %   'uniqueRNs', 'segLengthsInH', 'segLengthsInM',
+                %   'titleToPlot', 'uniqueRNLegendLabels',
+                %   'curMileOverTimeFigXLimit'.
+                curVarsToLoad = { ...
+                    'curDate', 'curVehId', 'curVehName', ...
+                    'curWOId', 'curActId', 'curActName', ...
+                    'curActTotalHs', 'curDetectedWorkInH', ...
+                    'curDetectedWorkInM'};
+
+                LocalDate = cell(numOfCacheFs, 1);
+                VehId = nan(numOfCacheFs, 1);
+                VehName = cell(numOfCacheFs, 1);
+                % We will eventually merge the WOId field so that it is a
+                % string for a list of WOIds instead of just one number.
+                WOIds = cell(numOfCacheFs, 1);
+                ActId = nan(numOfCacheFs, 1);
+                ActName = cell(numOfCacheFs, 1);
+                ActTotalHs = nan(numOfCacheFs, 1);
+                DetectedWorkInH = nan(numOfCacheFs, 1);
+                DetectedWorkInM = nan(numOfCacheFs, 1);
+
+                for idxF = 1:numOfCacheFs
+                    cachedRes = load(fullfile( ...
+                        dirCacheFiles(idxF).folder, ...
+                        dirCacheFiles(idxF).name), curVarsToLoad{:});
+
+                    LocalDate{idxF} = cachedRes.curDate;
+                    VehId(idxF) = cachedRes.curVehId;
+                    VehName{idxF} = cachedRes.curVehName;
+                    WOIds{idxF} = num2str(cachedRes.curWOId);
+                    ActId(idxF) = cachedRes.curActId;
+                    ActName{idxF} = cachedRes.curActName;
+                    ActTotalHs(idxF) = cachedRes.curActTotalHs;
+                    DetectedWorkInH(idxF) = cachedRes.curDetectedWorkInH;
+                    DetectedWorkInM(idxF) = cachedRes.curDetectedWorkInM;
+                end
+
+                % Add UnixTime for easier sorting.
+                UnixTime = cellfun(@(d) posixtime(d), LocalDate);
+                % Convert LocalDate to a list of strings.
+                LocalDate = cellfun(@(d) ...
+                    datestr(d, reportDateFormat), LocalDate, ...
+                    'UniformOutput', false);
+
+                loadedResTable = table(UnixTime, ...
+                    LocalDate, VehId, VehName, ...
+                    WOIds, ActId, ActName, ...
+                    ActTotalHs, DetectedWorkInH, DetectedWorkInM);
+
+                % Then order the table by date, vehicle ID, work order ID,
+                % activity ID, and work hours.
+                loadedResTable = sortrows(loadedResTable, ...
+                    {'UnixTime', 'VehId', 'WOIds', 'ActId', 'ActTotalHs'});
+
+                % Group work orders of the same day for the same vehicle to
+                % compute the total reported and detected work hours.
+                VeriRepTab = loadedResTable;
+                cntNewRecs = 0;
+                colsToCompare = {'UnixTime', 'LocalDate', 'VehId', ...
+                    'VehName', 'ActId', 'ActName'};
+                while cntNewRecs < (size(VeriRepTab, 1) - 1)
+                    cntNewRecs = cntNewRecs+1;
+
+                    if isempty( setdiff( ...
+                            VeriRepTab(cntNewRecs, colsToCompare), ...
+                            VeriRepTab(cntNewRecs+1, colsToCompare)) )
+                        % Merge the next entry into the current one.
+                        VeriRepTab.WOIds{cntNewRecs} ...
+                            = [VeriRepTab.WOIds{cntNewRecs}, ...
+                            delimiterForWOIds, ...
+                            VeriRepTab.WOIds{cntNewRecs+1}];
+                        VeriRepTab.ActTotalHs(cntNewRecs) ...
+                            = VeriRepTab.ActTotalHs(cntNewRecs) ...
+                            + VeriRepTab.ActTotalHs(cntNewRecs+1);
+                        VeriRepTab.DetectedWorkInH(cntNewRecs) ...
+                            = VeriRepTab.DetectedWorkInH(cntNewRecs) ...
+                            + VeriRepTab.DetectedWorkInH(cntNewRecs+1);
+                        VeriRepTab.DetectedWorkInM(cntNewRecs) ...
+                            = VeriRepTab.DetectedWorkInM(cntNewRecs) ...
+                            + VeriRepTab.DetectedWorkInM(cntNewRecs+1);
+
+                        % Delete next entry.
+                        VeriRepTab(cntNewRecs+1, :) = [];
+
+                        % Need to re-check this row just in case more
+                        % entries can be merged.
+                        cntNewRecs = cntNewRecs - 1;
+                    end
+                end
+
+                % Add scores and notes.
+                numOfRepEntries = size(VeriRepTab, 1);
+
+                VeriRepTab.MatchingScore = nan(numOfRepEntries, 1);
+                VeriRepTab.Note = cell(numOfRepEntries, 1);
+
+                for idxRepE = 1:numOfRepEntries
+                    curDelta = VeriRepTab.DetectedWorkInH(idxRepE) ...
+                        - VeriRepTab.ActTotalHs(idxRepE);
+
+                    if curDelta > maxAllowedMismatchInH
+                        % Warning: Under-reporting... Missing Work Orders?
+                        VeriRepTab.Note{idxRepE} = UNDER_REP_WARNING;
+                        VeriRepTab.MatchingScore(idxRepE) = 0;
+                    elseif curDelta < -maxAllowedMismatchInH
+                        % Warning: Over-reporting... Missing GPS records?
+                        VeriRepTab.Note{idxRepE} = OVER_REP_WARNING;
+                        VeriRepTab.MatchingScore(idxRepE) = 0;
+                    else
+                        % Compute score via scoreFct(delta).
+                        VeriRepTab.MatchingScore(idxRepE) ...
+                            = scoreFct(curDelta);
+                        assert( ...
+                            VeriRepTab.MatchingScore(idxRepE)>=0 ...
+                            && ...
+                            VeriRepTab.MatchingScore(idxRepE)<=1, ...
+                            ['Unexpected score: ', ...
+                            num2str( ...
+                            VeriRepTab.MatchingScore(idxRepE)), ...
+                            '!']);
+                    end
+                end
+
+                % Export the result into an .scv file, with an warning for
+                % each too disagreeing pair of total reported and detected
+                % work hours.
+                tableToExport = VeriRepTab;
+
+                tableToExport.ActTotalHs = round( ...
+                    tableToExport.ActTotalHs, reportDigitsAfterDecPt);
+                tableToExport.DetectedWorkInH = round( ...
+                    tableToExport.DetectedWorkInH, ...
+                    reportDigitsAfterDecPt);
+
+                % Change meter to mile.
+                tableToExport.DetectedWorkInMil = ...
+                    distdim(tableToExport.DetectedWorkInM, ...
+                    'meters', 'miles');
+                tableToExport.DetectedWorkInMil = round( ...
+                    tableToExport.DetectedWorkInMil, ...
+                    reportDigitsAfterDecPt);
+
+                % Change matching score to a percent number string.
+                tableToExport.MatchingScore = arrayfun(@(s) ...
+                    [num2str(round( ...
+                    s.*100, max(reportDigitsAfterDecPt-2, 0))), '%'], ...
+                    tableToExport.MatchingScore, ...
+                    'UniformOutput', false);
+
+                % Only keep important fields to export.
+                tableToExport = tableToExport(:, { ...
+                    'LocalDate', 'VehId', 'VehName', 'WOIds', ...
+                    'ActId', 'ActName', 'ActTotalHs', ...
+                    'DetectedWorkInH', 'DetectedWorkInMil', ...
+                    'MatchingScore', 'Note' ...
+                    });
+
+                absPathToSaveWorkOrderVeriReport = fullfile( ...
+                    pathToSaveResults, ...
+                    'Report_WorkOrderVerificaiton.csv');
+                writetable(tableToExport, absPathToSaveWorkOrderVeriReport);
+
+                %% Automatically Generate Work Orders
+                % We will pre-fill as much info as possible. First, scan
+                % and load all extracted info into a table.
+
+                % Only load the needed info for the report. Not needed for
+                % now:
+                %   'curWOId', 'curActId', 'curActName', 'curActTotalHs'
+                %   'titleToPlot', 'uniqueRNLegendLabels',
+                %   'curMileOverTimeFigXLimit'.
+
+                %     curDate
+                %
+                %     curVehId
+                %
+                %     curVehName
+                %
+                %     uniqueRNs
+                %
+                %     segLengthsInH
+                %
+                %     segLengthsInM
+                %
+                %     curDetectedWorkInH
+                %
+                %     curDetectedWorkInM
+
+                absPathToSaveWorkOrderAutoGenReport = fullpath( ...
+                    pathToSaveResults, ...
+                    'Report_WorkOrderAutoGenerated.csv');
+
+
+                %% TODO: wait here.
+                % For now... there is nothing else to do after the debug
+                % figures are generated.
                 pause;
             end
         end
