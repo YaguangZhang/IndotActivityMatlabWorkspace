@@ -1143,8 +1143,6 @@ for idxWOG = 1:numOfWorkOrderGroups
                 hFigMileOverTimeSepRoads = figure( ...
                     'Position', [0, 0, debugFigSizeInPixel], ...
                     'Visible', ~FLAG_SILENT_FIGS);
-                set(hFigMileOverTimeSepRoads, ...
-                    'DefaultAxesTitleFontWeight', 'bold');
                 % Set up tile layout figure grid, with one tile for each
                 % road.
                 num2Tiles = length(uniqueRNs);
@@ -1187,6 +1185,8 @@ for idxWOG = 1:numOfWorkOrderGroups
                     end
                 end
 
+                % For preallocating space for annotation line information.
+                annoLineCnt = 0;
                 for idxActT = 1:curNumOfActivityTracks
                     % Fetch GPS info.
                     curActTrackParsedGLT = parsedGpsLocTable(...
@@ -1262,6 +1262,11 @@ for idxWOG = 1:numOfWorkOrderGroups
                                 colorForLine = colorGrey;
                                 lineStyleToUse = NA_LINE_STYLE;
                                 lineAlpha = 0;
+
+                                % Only need to worry about plotting between
+                                % different subfigures if the next tile is
+                                % different from the current one.
+                                annoLineCnt = annoLineCnt + 1;
                             end
                             plot(dateTimesToPlot(idxPt:(idxPt+1)), ...
                                 milesToPlot(idxPt:(idxPt+1)), ...
@@ -1477,15 +1482,157 @@ for idxWOG = 1:numOfWorkOrderGroups
                 saveas(hFigMileOverTimeSepRoads, ...
                     [curPathToSaveMileOverTimeFigSepRoads, '.jpg']);
 
-                % Create another SepRoads version plot with grey lines
-                % indicating GPS record gaps.
+                % Create another SepRoads version plot (by updating
+                % hFigMileOverTimeSepRoads) with grey lines indicating GPS
+                % record gaps.
                 if FLAG_SILENT_FIGS
                     set(0, 'CurrentFigure', hFigMileOverTimeSepRoads);
                 else
                     figure(hFigMileOverTimeSepRoads); %#ok<UNRCH>
                 end
 
+                % Compute and cache the information needed to create the
+                % grey dotted line indicating potential GPS gaps.
+                [annoLineNormXsRelToFig, annoLineNormYsRelToFig] ...
+                    = deal(nan(annoLineCnt, 2));
+                annoLineStyles = cell(annoLineCnt, 1);
+                annoLineColors = nan(annoLineCnt, 3);
+                [annoLineAlphas, annoLineWidths] ...
+                    = deal(nan(annoLineCnt, 1));
 
+                annoLineCnt = 0;
+                for idxActT = 1:curNumOfActivityTracks
+                    % Fetch GPS info.
+                    curActTrackParsedGLT = parsedGpsLocTable(...
+                        activityTracksAsSampIndicesInParsedGLT{idxWOG}...
+                        {idxActT}, :);
+
+                    % Show the GPS points on a map.
+                    latsToPlot = curActTrackParsedGLT.lat;
+                    lonsToPlot = curActTrackParsedGLT.lon;
+                    dateTimesToPlot ...
+                        = curActTrackParsedGLT.localDatetime;
+                    milesToPlot = curActTrackParsedGLT.mile;
+                    roadNamesToPlot = curActTrackParsedGLT.roadName;
+
+                    % Snap NaN mile values to -1 for visualization.
+                    milesToPlot(isnan(milesToPlot)) = -1;
+
+                    % Assign a temporary integer ID for each road name.
+                    roadNameIdsToPlot = cellfun( ...
+                        @(rn) find(strcmp(uniqueRNs, rn)), ...
+                        roadNamesToPlot);
+
+                    % We will plot GPS samples one by one.
+                    numOfPtsToPlot = length(latsToPlot);
+                    for idxPt = 1:numOfPtsToPlot
+                        curDatetime = dateTimesToPlot(idxPt);
+                        curRoadNameId = roadNameIdsToPlot(idxPt);
+
+                        % For the version with roads vertically separated,
+                        % we need to plot into the right tile.
+                        curTileIdx = tileIndicesForUniRs(curRoadNameId);
+                        nexttile(curTileIdx);
+
+                        % Assign a color to use based on the road names.
+                        % Reserve grey to the "no matching road" case (ID
+                        % #1).
+                        if curRoadNameId==1
+                            color = colorGrey;
+                        else
+                            color = colorOrder( ...
+                                mod(curRoadNameId, numOfColors)+1, :);
+                        end
+
+                        hoursAfterStartOfDay = hours( ...
+                            curDatetime - curDateStart);
+                        interpQueryPt = hoursAfterStartOfDay ...
+                            .^expFactorForMapping;
+
+                        markerSize = interp1(interpRangeForMapping, ...
+                            markerSizeRangeInPt, interpQueryPt);
+                        lineWidth = interp1(interpRangeForMapping, ...
+                            lineWithRangeInPt, interpQueryPt);
+                        alpha = interp1(interpRangeForMapping, ...
+                            alphaRange, interpQueryPt);
+
+                        if idxPt<numOfPtsToPlot
+                            % Convert a data point (x, y) in a subfigure
+                            % (indicated by tileIdx) of a tile layout to
+                            % figure coordinates (xf, yf) in normalized
+                            % unit.
+                            [normXsRelToFig, normYsRelToFig] ...
+                                = deal(nan(1, 2));
+
+                            % Connect this sample with the next one with an
+                            % annotation line. Only necessary if the next
+                            % tile is different from the current one.
+                            if curRoadNameId ...
+                                    ~= roadNameIdsToPlot(idxPt+1)
+                                colorForLine = colorGrey;
+                                lineStyleToUse = NA_LINE_STYLE;
+                                lineAlpha = alpha;
+
+                                [normXsRelToFig(1), normYsRelToFig(1)] ...
+                                    = tileData2FigNorm( ...
+                                    dateTimesToPlot(idxPt), ...
+                                    milesToPlot(idxPt), curTileIdx);
+
+                                nextRoadNameId ...
+                                    = roadNameIdsToPlot(idxPt+1);
+                                nextTileIdx ...
+                                    = tileIndicesForUniRs(nextRoadNameId);
+                                [normXsRelToFig(2), normYsRelToFig(2)] ...
+                                    = tileData2FigNorm( ...
+                                    dateTimesToPlot(idxPt+1), ...
+                                    milesToPlot(idxPt+1), nextTileIdx);
+
+                                % Cache the results.
+                                annoLineCnt = annoLineCnt + 1;
+                                annoLineNormXsRelToFig(annoLineCnt, :) ...
+                                    = normXsRelToFig;
+                                annoLineNormYsRelToFig(annoLineCnt, :) ...
+                                    = normYsRelToFig;
+                                annoLineStyles{annoLineCnt} ...
+                                    = lineStyleToUse;
+                                annoLineColors(annoLineCnt, :) ...
+                                    = colorForLine;
+                                annoLineAlphas(annoLineCnt) = lineAlpha;
+                                annoLineWidths(annoLineCnt) = lineWidth;
+                            end
+                        end
+                    end
+                end
+
+                % Add the annotation lines. First, in order to plot lines
+                % over multiple subplots, create an invisible axes as the
+                % shared canvas. Note that this will interrupt with the
+                % access to the tile layout (nexttile will not work).
+                hAxCanvas = axes;
+                set(hAxCanvas, 'Position', [0, 0, 1, 1], 'Visible', false);
+                % Then add the annotation lines one by one.
+                for idxAnnoLine = 1:annoLineCnt
+                    % TODOs: Adjust tranparency somehow; use dynamic line
+                    % width annoLineWidths(idxAnnoLine).
+                    fixLineWidth = 1;
+                    hAnnoLine = annotation('line', ...
+                        annoLineNormXsRelToFig(idxAnnoLine, :), ...
+                        annoLineNormYsRelToFig(idxAnnoLine, :), ...
+                        'LineStyle', annoLineStyles{idxAnnoLine}, ...
+                        'Color', [annoLineColors(idxAnnoLine, :), ...
+                        annoLineAlphas(idxAnnoLine)], ...
+                        'LineWidth', fixLineWidth);
+                    % TODO: this does not work either.
+                    %   uistack(hAnnoLine, 'bottom');
+                end
+
+                % Save the SepRoads with grey lines figure.
+                saveas(hFigMileOverTimeSepRoads, ...
+                    [curPathToSaveMileOverTimeFigSepRoadsWithGrey, ...
+                    '.fig']);
+                saveas(hFigMileOverTimeSepRoads, ...
+                    [curPathToSaveMileOverTimeFigSepRoadsWithGrey, ...
+                    '.jpg']);
 
                 % Close the figures.
                 close all;
