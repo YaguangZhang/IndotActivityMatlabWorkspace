@@ -24,5 +24,9 @@ ysInAxes = ruler2num(ys, hAxTile.YAxis);
 ysf = tileInnerPos(2) ...
     + tileInnerPos(4).*( ...
     ysInAxes-yRangeInAxes(1))./(yRangeInAxes(2)-yRangeInAxes(1));
+
+assert(all(xsf>=0 & xsf<=1 & ysf>=0 & ysf<=1), ...
+    'Normalized values must be between 0 and 1!');
+
 end
 % EOF
