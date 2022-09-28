@@ -121,6 +121,10 @@ colorGrey = ones(1,3).*0.5;
 % String formatter.
 strFmt = '%.1f';
 
+% We will always save figures as .jpg files. However, to speed things up,
+% one can set the flag below to disable saving to .fig.
+FLAG_DISABLE_SAVEAS_FIG = true;
+
 %% Load IN Mile Markers and Road Centerlines
 
 disp(' ')
@@ -964,6 +968,11 @@ for idxWOG = 1:numOfWorkOrderGroups
                         = findConsecutiveSubSeqs(roadNameIdsToPlot);
                     numOfSegs = length(indicesStart);
 
+                    % Cache a list of patch object so that we can move them
+                    % to bottom via uistack more quickly (than repeatedly
+                    % doing it for each patch).
+                    hsPatchesForUistack ...
+                        = matlab.graphics.primitive.Patch.empty;
                     for idxS = 1:numOfSegs
                         curIdxStart = indicesStart(idxS);
                         curIdxEnd = indicesEnd(idxS);
@@ -992,7 +1001,7 @@ for idxWOG = 1:numOfWorkOrderGroups
                             [pMinY, pMaxY, pMaxY, pMinY], ...
                             color, 'LineStyle', 'none', ...
                             'FaceAlpha', segPatchAlpha);
-                        uistack(hSegPatch, 'bottom');
+                        hsPatchesForUistack(curRNId) = hSegPatch;
                         hsSegPatchCell{curRNId} = hSegPatch;
 
                         % Add road name.
@@ -1037,6 +1046,12 @@ for idxWOG = 1:numOfWorkOrderGroups
                             'meters', 'miles'), strFmt), ...
                             ' mil'];
                     end
+                    % Get rid of non-patch element and move all patches to
+                    % the bottom as background.
+                    hsPatchesForUistack(~arrayfun(@(h) ...
+                        isa(h, 'matlab.graphics.primitive.Patch'), ...
+                        hsPatchesForUistack)) = [];
+                    uistack(hsPatchesForUistack, 'bottom');
                 end
 
                 % Add a lengend with aggregated information, with the first
@@ -1092,17 +1107,23 @@ for idxWOG = 1:numOfWorkOrderGroups
                     'Alpha', mapAlpha);
 
                 % Save the map figure.
-                saveas(hFigGpsOnMap, [curPathToSaveMapFig, '.fig']);
+                if ~FLAG_DISABLE_SAVEAS_FIG
+                    saveas(hFigGpsOnMap, [curPathToSaveMapFig, '.fig']);
+                end
                 saveas(hFigGpsOnMap, [curPathToSaveMapFig, '.jpg']);
 
                 % A 3D version.
                 view(3);
-                saveas(hFigGpsOnMap, [curPathToSaveMap3DFig, '.fig']);
+                if ~FLAG_DISABLE_SAVEAS_FIG
+                    saveas(hFigGpsOnMap, [curPathToSaveMap3DFig, '.fig']);
+                end
                 saveas(hFigGpsOnMap, [curPathToSaveMap3DFig, '.jpg']);
 
                 % Save the mile marker figure.
-                saveas(hFigMileOverTime, ...
-                    [curPathToSaveMileOverTimeFig, '.fig']);
+                if ~FLAG_DISABLE_SAVEAS_FIG
+                    saveas(hFigMileOverTime, ...
+                        [curPathToSaveMileOverTimeFig, '.fig']);
+                end
                 saveas(hFigMileOverTime, ...
                     [curPathToSaveMileOverTimeFig, '.jpg']);
 
@@ -1479,13 +1500,17 @@ for idxWOG = 1:numOfWorkOrderGroups
                 title(titleToPlot, 'FontSize', 11);
 
                 % Save the mile marker figure.
-                saveas(hFigMileOverTimeNoGrey, ...
-                    [curPathToSaveMileOverTimeFigNoGrey, '.fig']);
+                if ~FLAG_DISABLE_SAVEAS_FIG
+                    saveas(hFigMileOverTimeNoGrey, ...
+                        [curPathToSaveMileOverTimeFigNoGrey, '.fig']);
+                end
                 saveas(hFigMileOverTimeNoGrey, ...
                     [curPathToSaveMileOverTimeFigNoGrey, '.jpg']);
 
-                saveas(hFigMileOverTimeSepRoads, ...
-                    [curPathToSaveMileOverTimeFigSepRoads, '.fig']);
+                if ~FLAG_DISABLE_SAVEAS_FIG
+                    saveas(hFigMileOverTimeSepRoads, ...
+                        [curPathToSaveMileOverTimeFigSepRoads, '.fig']);
+                end
                 saveas(hFigMileOverTimeSepRoads, ...
                     [curPathToSaveMileOverTimeFigSepRoads, '.jpg']);
 
@@ -1634,9 +1659,11 @@ for idxWOG = 1:numOfWorkOrderGroups
                 end
 
                 % Save the SepRoads with grey lines figure.
-                saveas(hFigMileOverTimeSepRoads, ...
-                    [curPathToSaveMileOverTimeFigSepRoadsWithGrey, ...
-                    '.fig']);
+                if ~FLAG_DISABLE_SAVEAS_FIG
+                    saveas(hFigMileOverTimeSepRoads, ...
+                        [curPathToSaveMileOverTimeFigSepRoadsWithGrey, ...
+                        '.fig']);
+                end
                 saveas(hFigMileOverTimeSepRoads, ...
                     [curPathToSaveMileOverTimeFigSepRoadsWithGrey, ...
                     '.jpg']);
