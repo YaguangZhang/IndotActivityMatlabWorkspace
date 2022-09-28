@@ -1202,7 +1202,7 @@ for idxWOG = 1:numOfWorkOrderGroups
                     % Force using datetime for x axis.
                     plot(curMileOverTimeFigXLimit, [nan nan]);
                     xlim(curMileOverTimeFigXLimit);
-                    ylim('tight');
+                    xlim('manual'); ylim('tight');
                     ylabel({curUniRN, 'Mile Marker'});
 
                     % No need to show x ticks except in the bottom tile.
@@ -1412,7 +1412,6 @@ for idxWOG = 1:numOfWorkOrderGroups
                         curTileIdx = tileIndicesForUniRs(curRNId);
 
                         nexttile(curTileIdx);
-                        axis manual;
                         curYLim = ylim;
                         hSegPatchSepRoads = patch( ...
                             [pMinX, pMinX, pMaxX, pMaxX], ...
