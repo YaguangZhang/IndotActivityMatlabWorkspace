@@ -45,6 +45,13 @@ if ~exist(pathToSaveResults, 'dir')
     mkdir(pathToSaveResults)
 end
 
+% Store entries for multi-day work orders into a separate folder.
+pathToSaveMultiDayWOEntries = fullfile(pathToSaveResults, ...
+    'DetectedMultiDayWOs');
+if ~exist(pathToSaveMultiDayWOEntries, 'dir')
+    mkdir(pathToSaveMultiDayWOEntries)
+end
+
 % The absolute path to the INDOT GPS 2021 winter operation work order .csv
 % file.
 pathToWorkOrderCsv = fullfile(pwd, '..', ...
@@ -673,9 +680,32 @@ for idxWOG = 1:numOfWorkOrderGroups
     cur1stWORecs = cur1stWO;
     cur1stWORecs.idxInWorkOrderTable = [];
     cur1stWORecs.totalHrs = [];
-    
-    assert(isempty(setdiff(curWOsRecords, cur1stWORecs)), ...
-        'Work orders in this group have different records!')
+
+    unexpectedWOs = setdiff(curWOsRecords, cur1stWORecs);
+    if ~isempty(unexpectedWOs)
+        % Compare all fields except localDatetime, unixTime, and
+        % idxWorkOrderGroup (this should be the same for all these
+        % entries).
+        if isempty(setdiff( ...
+                unexpectedWOs(:, 2:6), cur1stWORecs(:, 2:6) ...
+                ))
+            % It can be concluded that only the time fields, i.e.,
+            % localDatetime and unixTime, have different entries.
+            warning(['[', datestr(now, datetimeFormat), ...
+                '] Mutli-day work order (#', ...
+                num2str(cur1stWORecs.workOrderId), ...
+                ') detected!']);
+
+            % Save all entries of the current work order into one .csv
+            % file.
+            writetable( curWOs, fullfile(pathToSaveMultiDayWOEntries, ...
+                ['WO_', num2str(cur1stWORecs.workOrderId), '.csv']) );
+        else
+            error(['[', datestr(now, datetimeFormat), ...
+                '] Work orders in group #', num2str(idxWOG), ...
+                ' have different records!']);
+        end
+    end
 
     curDate = cur1stWO.localDatetime;
     curVehId = cur1stWO.vehId;
