@@ -673,6 +673,7 @@ for idxWOG = 1:numOfWorkOrderGroups
     cur1stWORecs = cur1stWO;
     cur1stWORecs.idxInWorkOrderTable = [];
     cur1stWORecs.totalHrs = [];
+    
     assert(isempty(setdiff(curWOsRecords, cur1stWORecs)), ...
         'Work orders in this group have different records!')
 
@@ -1190,19 +1191,34 @@ for idxWOG = 1:numOfWorkOrderGroups
 
                 % Adjust subfigure appearance.
                 for idxTile = 1:num2Tiles
+                    nexttile(idxTile);
+                    hold on; grid on; grid minor;
+
+                    % Force using datetime for x axis.
+                    plot(curMileOverTimeFigXLimit, [nan nan]);
+
                     curUniRIdx = uniRIndicesForTs(idxTile);
                     if curUniRIdx == 1
                         curUniRN = 'Unknown';
+                        curTileYLim = [-2, 0];
                     else
                         curUniRN = uniqueRNs{curUniRIdx};
+                        allGpsLocTableForCurTile ...
+                            = allGpsLocTableForCurWOG(strcmp( ...
+                            allGpsLocTableForCurWOG.roadName, curUniRN), :);                        
+                        hTemp = plot(curMileOverTimeFigXLimit, ...
+                            [min(allGpsLocTableForCurTile.mile), ...
+                            max(allGpsLocTableForCurTile.mile)]);
+                        curTileYLim = ylim;
+                        delete(hTemp);
                     end
 
-                    nexttile;
-                    hold on; grid on; grid minor;
-                    % Force using datetime for x axis.
-                    plot(curMileOverTimeFigXLimit, [nan nan]);
+                    % Force adjust viewable region based on all points to
+                    % add in the tile.                    
                     xlim(curMileOverTimeFigXLimit);
-                    xlim('manual'); ylim('tight');
+                    ylim(curTileYLim);
+                    axis manual;
+
                     ylabel({curUniRN, 'Mile Marker'});
 
                     % No need to show x ticks except in the bottom tile.
