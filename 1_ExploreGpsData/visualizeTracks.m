@@ -10,17 +10,35 @@ curFileName = mfilename;
 
 prepareSimulationEnv;
 
-% The absolute path to the folder for saving the results.
-pathToSaveResults = fullfile(pwd, '..', ...
-    'PostProcessingResults', '1_GpsTrackOverview');
+% PRESET determines which GPS dataset will be loaded and where the analysis
+% figures will be saved.
+PRESET = '20220804_IndotGpsData_Winter';
+
+switch lower(PRESET)
+    case lower('20220221_ExampleData')
+        % The absolute path to the INDOT GPS data .csv file.
+        pathToGpsLocCsv = fullfile(pwd, '..', ...
+            '20220221_ExampleData', '20210301_to_20210501_avl', ...
+            '20210301_to_20210501_location.csv');
+
+        % The absolute path to the folder for saving the results.
+        pathToSaveResults = fullfile(pwd, '..', ...
+            'PostProcessingResults', '1_GpsTrackOverview', ...
+            '20220221_ExampleData');
+    case lower('20220804_IndotGpsData_Winter')
+        pathToGpsLocCsv = fullfile(pwd, '..', ...
+            '20220804_IndotGpsData_Winter', ...
+            '20220804 AVL GPS Data for Purdue v2 csv', ...
+            '20220804 AVL GPS Data for Purdue v2.csv');
+        pathToSaveResults = fullfile(pwd, '..', ...
+            'PostProcessingResults', '1_GpsTrackOverview', ...
+            '20220804_IndotGpsData_Winter');
+    otherwise
+        error(['Unsupported PRESET ', PRESET, '!'])
+end
 if ~exist(pathToSaveResults, 'dir')
     mkdir(pathToSaveResults)
 end
-
-% The absolute path to the INDOT GPS data .csv file.
-pathToGpsLocCsv = fullfile(pwd, '..', ...
-    '20220221_ExampleData', '20210301_to_20210501_avl', ...
-    '20210301_to_20210501_location.csv');
 
 % % We will load cached results for faster processing if available.
 %  dirToCachedResults = fullfile(pathToSaveResults, 'cachedResults.mat');
@@ -57,25 +75,93 @@ mapXLabel = 'Longitude (degree)';
 mapYLabel = 'Latitude (degree)';
 mapZLabel = '';
 
+% Add a new column timestamp_local.
+LOCAL_TIME_ZONE = 'America/Indianapolis';
+
+% Time string formats for parsing INDOT data.
+INDOT_DATE_FORMAT = 'dd-MMM-yy';
+INDOT_TIMESTR_FORMAT = 'dd-MMM-yy hh.mm.ss.SSSSSSSSS a';
+% Format to use for storing time as datetime objects in Matlab.
+DATETIME_FORMAT = 'yyyy-MM-dd HH:mm:ss';
+
 %% Load GPS Data
 
 disp(' ')
 disp(['[', datestr(now, datetimeFormat), ...
     '] Loading GPS location info ...'])
 
-gpsLocTable = readtable(pathToGpsLocCsv);
+rawGpsLocTable = readtable(pathToGpsLocCsv);
 
-% Add a new column speedmph.
-gpsLocTable.speedmph =  convlength(gpsLocTable.speedkph, 'km', 'mi');
+% We would need the following fields:
+%   - timestamp_local
+%     GPS local time stamp stored as datetime, with TimeZone properly set.
+%   - vehicleId
+%     Integer IDs of the vehicles.
+%   - geo_Lat, geo_Long
+%     The GPS location (latitude, longitude).
+%   - speedkph, speedmph
+%     GPS speed in kilometers/hour and miles/hour, respectively.
+%   - heading
+%     Heading in degree from the GPS records.
+gpsLocTable = table;
+switch lower(PRESET)
+    case lower('20220221_ExampleData')
+        gpsLocTable = rawGpsLocTable;
 
-% Add a new column timestamp_local.
-LOCAL_TIME_ZONE = 'America/Indianapolis';
-% UTC time stamps.
-dateTimesUtc = datetime(gpsLocTable.timestamp, 'TimeZone', 'UTC');
-% Local time stamps.
-dateTimesEst = dateTimesUtc;
-dateTimesEst.TimeZone = LOCAL_TIME_ZONE;
-gpsLocTable.timestamp_local = dateTimesEst;
+        % Add a new column speedmph.
+        gpsLocTable.speedmph = convlength( ...
+            gpsLocTable.speedkph, 'km', 'mi');
+
+        % UTC time stamps.
+        dateTimesUtc = datetime(gpsLocTable.timestamp, ...
+            'TimeZone', 'UTC', 'Format', DATETIME_FORMAT);
+        % Local time stamps.
+        dateTimesEst = dateTimesUtc;
+        dateTimesEst.TimeZone = LOCAL_TIME_ZONE;
+
+        gpsLocTable.timestamp_local = dateTimesEst;
+
+        % Reorder fields.
+        gpsLocTable = gpsLocTable(:, {'timestamp_local', ...
+            'vehicleId', 'geo_Lat', 'geo_Long', ...
+            'speedkph',  'speedmph', 'heading'});
+    case lower('20220804_IndotGpsData_Winter')
+        % Convert time string to datetime for easier processing.
+        indicesEndOfAmOrPmInLocalTimeStrings ...
+            = strfind(rawGpsLocTable.VEHICLE_TIMESTAMP, 'M ');
+        indicesEndOfAmOrPmInLocalTimeStrings ...
+            = vertcat(indicesEndOfAmOrPmInLocalTimeStrings{:});
+        indexEndOfAmOrPmInLocalTimeStrings ...
+            = indicesEndOfAmOrPmInLocalTimeStrings(1);
+
+        % Check the time string format.
+        assert(all(indicesEndOfAmOrPmInLocalTimeStrings ...
+            == indexEndOfAmOrPmInLocalTimeStrings), ...
+            'Inconsistent VEHICLE_TIMESTAMP format!')
+        % Check local time zone listed in the time string.
+        assert(all(contains( ...
+            rawGpsLocTable.VEHICLE_TIMESTAMP, upper(LOCAL_TIME_ZONE)) ...
+            ), 'Unexpected time zone found!')
+
+        vehicleTimeStamps = vertcat(rawGpsLocTable.VEHICLE_TIMESTAMP{:});
+        vehicleTimeStamps = vehicleTimeStamps(:, ...
+            1:indexEndOfAmOrPmInLocalTimeStrings);
+
+        gpsLocTable.timestamp_local = datetime(vehicleTimeStamps, ...
+            'InputFormat', INDOT_TIMESTR_FORMAT, ...
+            'TimeZone', LOCAL_TIME_ZONE, ...
+            'Format', DATETIME_FORMAT);
+
+        gpsLocTable.vehicleId = rawGpsLocTable.COMMISION_NUMBER;
+
+        gpsLocTable.geo_Lat = rawGpsLocTable.LATITUDE;
+        gpsLocTable.geo_Long = rawGpsLocTable.LONGITUDE;
+
+        gpsLocTable.speedkph = convlength( ...
+            rawGpsLocTable.SPEED_MILES_PER_HOUR, 'mi', 'km');
+        gpsLocTable.speedmph = rawGpsLocTable.SPEED_MILES_PER_HOUR;
+        gpsLocTable.heading = rawGpsLocTable.VEHICLE_HEADING;
+end
 
 disp(['[', datestr(now, datetimeFormat), ...
     '] Done!'])
@@ -208,7 +294,8 @@ disp(['[', datestr(now, datetimeFormat), ...
 
 % Sort GPS points into days; counting from day 1.
 dayCnts = 1 + floor(days( ...
-    dateTimesEst - dateshift(dateTimesEst(1), 'start', 'day')));
+    gpsLocTable.timestamp_local ...
+    - dateshift(gpsLocTable.timestamp_local(1), 'start', 'day')));
 uniqueDayCnts = unique(dayCnts);
 numOfDays = length(uniqueDayCnts);
 
@@ -235,7 +322,8 @@ end
 for idxDay = 1:numOfDays
     curDayCnt = uniqueDayCnts(idxDay);
     gpsLocTableDays{idxDay} = sortrows( ...
-        gpsLocTable(dayCnts==curDayCnt, :), {'vehicleId', 'timestamp'});
+        gpsLocTable(dayCnts==curDayCnt, :), ...
+        {'vehicleId', 'timestamp_local'});
 
     curVehIdsDays = gpsLocTableDays{idxDay}.vehicleId;
     curUniqueVehIds = unique(curVehIdsDays);
@@ -249,10 +337,9 @@ for idxDay = 1:numOfDays
         curGpsLonLatTracks{idxTrack} = gpsLocTableDays{idxDay}{ ...
             curVehIdsDays == curVehId, {'geo_Long', 'geo_Lat'}};
 
-        curGpsDatetimeStamps{idxTrack} = datetime( ...
-            gpsLocTableDays{idxDay}{curVehIdsDays == curVehId, ...
-            {'timestamp'}}, 'TimeZone', 'UTC');
-        curGpsDatetimeStamps{idxTrack}.TimeZone = LOCAL_TIME_ZONE;
+        curGpsDatetimeStamps{idxTrack} = gpsLocTableDays{idxDay} ...
+            {curVehIdsDays == curVehId, ...
+            {'timestamp_local'}};
 
         curVehIds(idxTrack) = curVehId;
 
@@ -289,7 +376,7 @@ for idxDay = 1:numOfDays
             curGpsLonLatTracks{idxTrack}(:,2), '.-', ...
             'MarkerSize', dotMarkerSize);
     end
-    [y,m,d] = ymd(gpsLocTableDays{idxDay}{1,'timestamp'});
+    [y,m,d] = ymd(gpsLocTableDays{idxDay}{1,'timestamp_local'});
     title(['GPS Tracks on ', ...
         num2str(m), '/', num2str(d), '/', num2str(y)]);
 
@@ -416,12 +503,14 @@ disp(['[', datestr(now, datetimeFormat), ...
     '] Calculating time stamps in hours past midnight each day ...'])
 
 timestampsInHPastMidnight = hours( ...
-    dateTimesEst - dateshift(dateTimesEst, 'start', 'day'));
+    gpsLocTable.timestamp_local ...
+    - dateshift(gpsLocTable.timestamp_local, 'start', 'day'));
 
 figure('Visible', ~FLAG_SILENT_FIGS, 'Position', cdfAndHistFigPos);
 histogram(timestampsInHPastMidnight);
 xlim([0, 24]); axis tight; grid on; grid minor;
-xlabel(['Local Time After Midnight at ', dateTimesEst.TimeZone, ' (h)']);
+xlabel(['Local Time After Midnight at ', ...
+    gpsLocTable.timestamp_local.TimeZone, ' (h)']);
 ylabel('Record Count (#)');
 
 exportgraphics(gca, fullfile(pathToSaveResults, ...
@@ -438,7 +527,8 @@ disp(['[', datestr(now, datetimeFormat), ...
     ' past the start of each hour ...'])
 
 timestampsInSPastStartOfEachMin = minutes( ...
-    dateTimesEst - dateshift(dateTimesEst, 'start', 'hour'));
+    gpsLocTable.timestamp_local ...
+    - dateshift(gpsLocTable.timestamp_local, 'start', 'hour'));
 
 figure('Visible', ~FLAG_SILENT_FIGS, 'Position', cdfAndHistFigPos);
 histogram(timestampsInSPastStartOfEachMin);
@@ -460,7 +550,8 @@ disp(['[', datestr(now, datetimeFormat), ...
     ' past the start of each minute ...'])
 
 timestampsInSPastStartOfEachMin = seconds( ...
-    dateTimesEst - dateshift(dateTimesEst, 'start', 'minute'));
+    gpsLocTable.timestamp_local ...
+    - dateshift(gpsLocTable.timestamp_local, 'start', 'minute'));
 
 figure('Visible', ~FLAG_SILENT_FIGS, 'Position', cdfAndHistFigPos);
 histogram(timestampsInSPastStartOfEachMin);
@@ -600,7 +691,7 @@ plot_google_map('MapType', 'road', 'Alpha', googleMapAlpha); axis manual;
 
 curPlot3kCbLabel = 'Sampling Time (min)';
 for idxDay = 1:numOfDays
-    [y,m,d] = ymd(gpsLocTableDays{idxDay}{1,'timestamp'});
+    [y,m,d] = ymd(gpsLocTableDays{idxDay}{1,'timestamp_local'});
     curFigTitle = ['Sampling Time for ', ...
         num2str(m), '/', num2str(d), '/', num2str(y)];
 
@@ -627,10 +718,13 @@ for idxDay = 1:numOfDays
     curSampTimesInMinToPlot = vertcat(curSampTimesInMinToPlot{:})./60;
 
     curBoolsOvertime = curSampTimesInMinToPlot>maxSampTimeInMinForPlot3k;
-    [~,~,hCb] = plot3k([curGpsLonLatToPlot(~curBoolsOvertime, :), ...
-        curSampTimesInMinToPlot(~curBoolsOvertime)], ...
-        'ColorRange', [0, maxSampTimeInMinForPlot3k], 'Labels', ...
-        {curFigTitle, mapXLabel, mapYLabel, mapZLabel, curPlot3kCbLabel});
+    if any(~curBoolsOvertime)
+        [~,~,hCb] = plot3k([curGpsLonLatToPlot(~curBoolsOvertime, :), ...
+            curSampTimesInMinToPlot(~curBoolsOvertime)], ...
+            'ColorRange', [0, maxSampTimeInMinForPlot3k], 'Labels', ...
+            {curFigTitle, mapXLabel, mapYLabel, ...
+            mapZLabel, curPlot3kCbLabel});
+    end
     view(2); zlim([0, maxSampTimeInMinForPlot3k]);
     curMaxTickLabel = hCb.TickLabels{end};
     idxSpaceToReplace = find(isspace(curMaxTickLabel), 1, 'last');
@@ -683,10 +777,13 @@ for idxDay = 1:numOfDays
     % Repeat the plot with a slower upper bound.
     curBoolsOvertimeS ...
         = curSampTimesInMinToPlot>maxSampTimeInMinForPlot3kLower;
-    [~,~,hCb] = plot3k([curGpsLonLatToPlot(~curBoolsOvertimeS, :), ...
-        curSampTimesInMinToPlot(~curBoolsOvertimeS)], ...
-        'ColorRange', [0, maxSampTimeInMinForPlot3kLower], 'Labels', ...
-        {curFigTitle, mapXLabel, mapYLabel, mapZLabel, curPlot3kCbLabel});
+    if any(~curBoolsOvertimeS)
+        [~,~,hCb] = plot3k([curGpsLonLatToPlot(~curBoolsOvertimeS, :), ...
+            curSampTimesInMinToPlot(~curBoolsOvertimeS)], ...
+            'ColorRange', [0, maxSampTimeInMinForPlot3kLower], 'Labels', ...
+            {curFigTitle, mapXLabel, mapYLabel, ...
+            mapZLabel, curPlot3kCbLabel});
+    end
     view(2); zlim([0, maxSampTimeInMinForPlot3kLower]);
     curMaxTickLabel = hCb.TickLabels{end};
     idxSpaceToReplace = find(isspace(curMaxTickLabel), 1, 'last');
