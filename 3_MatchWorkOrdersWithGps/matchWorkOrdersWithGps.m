@@ -26,23 +26,52 @@ LOCAL_TIME_ZONE = 'America/Indianapolis';
 INDOT_DATE_FORMAT = 'dd-MMM-yy';
 INDOT_TIMESTR_FORMAT = 'dd-MMM-yy hh.mm.ss.SSSSSSSSS a';
 % Format to use for storing time as datetime objects in Matlab.
-DATETIME_FORMAT = 'yyyy-mm-dd HH:mm:ss';
+DATETIME_FORMAT = 'yyyy-MM-dd HH:mm:ss';
 % Format to use when we need a label for a date.
-DATETIME_FORMAT_DATE_LABEL = 'yyyymmdd';
+DATESTR_FORMAT_DATE = 'yyyymmdd';
 
 % Optional. If this date range is set, only work order groups in this range
 % (including both dates) will be analyzed. If it is not set (by commenting
 % out this line), all work order groups will be processed.
 DATE_RANGE_OF_INTEREST = datetime(2021, 1, [31,31], ...
-    'TimeZone', LOCAL_TIME_ZONE);
+    'TimeZone', LOCAL_TIME_ZONE, 'Format', DATETIME_FORMAT);
+
+% We need to load and pre-process GPS data (mainly to determine mile
+% markers; very time-consuming) beyond the user-defined date range of
+% interest (e.g., if a work order can last at most two days, then both one
+% day before and one day after the date range).
+%
+%   - Hours to load & preprocess GPS data before the start (00:00:00) of
+%   the date range of interest, just in case, e.g., night shifts are
+%   involved.
+HOURS_TO_LOAD_BEFORE_DATE_RANGE = 24;
+%   - Hours to load & preprocess GPS data after the end (24:00:00) of the
+%   date range of interest, just in case, e.g., the work date is
+%   mislabeled.
+HOURS_TO_LOAD_AFTER_DATE_RANGE = 24;
+
+% Additionally, for any work order, GPS records before and after its date
+% (or dates if the work order covers multiple days) can be analyzed for
+% finding activities. We normally set these "extra time" to look at to 0,
+% because the work order dates extracted from all entries (not only for
+% vehicles, but also for operators and other resources) should cover all
+% dates a vehicle is used, even though the work order date range extracted
+% from vehicle entries alone does not garantee that.
+%
+%   - Hours to search activities before the start (00:00:00) of the work
+%   order date, just in case, e.g., night shifts are involved.
+HOURS_BEFORE_WORK_DATE_TO_SEARCH = 0;
+%   - Hours to search activities after the end (24:00:00) of the work order
+%   date, just in case, e.g., the work date is mislabeled.
+HOURS_AFTER_WORK_DATE_TO_SEARCH = 0;
 
 % Create a label (and later a dedicated folder accordingly to hold the
 % results) for each different analysis time range.
 if exist('DATE_RANGE_OF_INTEREST', 'var')
     label = [datestr(DATE_RANGE_OF_INTEREST(1), ...
-        DATETIME_FORMAT_DATE_LABEL), ...
+        DATESTR_FORMAT_DATE), ...
         '_to_', datestr(DATE_RANGE_OF_INTEREST(2), ...
-        DATETIME_FORMAT_DATE_LABEL)];
+        DATESTR_FORMAT_DATE)];
 end
 
 % The absolute path to the folder for saving results. TODO: test the 'ALL'
@@ -50,6 +79,16 @@ end
 if ~exist('label', 'var')
     label = 'ALL';
 end
+
+if HOURS_TO_LOAD_BEFORE_DATE_RANGE~=0
+    label = [label, '_LookAhead_', ...
+        num2str(HOURS_TO_LOAD_BEFORE_DATE_RANGE), 'h'];
+end
+if HOURS_TO_LOAD_AFTER_DATE_RANGE~=0
+    label = [label, '_LookAfter_', ...
+        num2str(HOURS_TO_LOAD_AFTER_DATE_RANGE), 'h'];
+end
+
 pathToSaveResults = fullfile(pwd, '..', ...
     'PostProcessingResults', '3_GpsForWorkOrders', label);
 if ~exist(pathToSaveResults, 'dir')
@@ -76,7 +115,7 @@ pathToGpsLocCsv = fullfile(pwd, '..', ...
 
 % The absolute path to the Howell vehicle inventory .csv files, just in
 % case the vehicle ID is not present in the GPS records.
-pathToTrackCsv = fullfile(pwd, '..', ...
+pathToTruckCsv = fullfile(pwd, '..', ...
     '20220221_ExampleData', '20210301_to_20210501_avl', 'truck.csv');
 % pathToVehicleInventoryCsv = fullfile(pwd, '..', ...
 %     '20220221_ExampleData', '20210301_to_20210501_avl', ...
@@ -95,13 +134,6 @@ defaultLineColors = [0, 0.4470, 0.7410; ...
     0.3010, 0.7450, 0.9330; ...
     0.6350, 0.0780, 0.1840];
 
-% Hours to search before the start (00:00:00) of the work order date, just
-% in case, e.g., night shifts are involved.
-HOURS_BEFORE_WORK_DATE_TO_SEARCH = 0;
-% Hours to search before the end (24:00:00) of the work order date, just in
-% case, e.g., the work date is mislabeled.
-HOURS_AFTER_WORK_DATE_TO_SEARCH = 0;
-
 % Maximum allowed time gap in minutes between continuous activity/GPS
 % tracks.
 MAX_ALLOWED_TIME_GAP_IN_MIN = 60;
@@ -115,7 +147,7 @@ FLAG_GEN_DEBUG_FIGS = true;
 %     0–100,000    0.002 USD per each (2.00 USD per 1000)
 %   - Ref:
 % https://developers.google.com/maps/documentation/maps-static/usage-and-billing
-NUM_OF_ACT_TRACK_DEBUG_FIGS = 1000;
+NUM_OF_ACT_TRACK_DEBUG_FIGS = 10; %1000;
 
 % Maximum allowed distance to a road for the GPS sample to be labeled as on
 % that road.
@@ -191,10 +223,12 @@ else
 
         disp(['    [', datestr(now, datetimeFormat), ...
             '] Converting time stamps to datetime objects ...'])
+        % Manually set the datetime variables for work order to be at noon
+        % to avoid ambiguity.
         workOrderTable.WorkDatetime = ...
             datetime(workOrderTable.WorkDate, ...
             'InputFormat', INDOT_DATE_FORMAT, 'TimeZone', LOCAL_TIME_ZONE, ...
-            'Format', DATETIME_FORMAT);
+            'Format', DATETIME_FORMAT) + hours(12);
 
         % Order work order entries.
         workOrderTable = sortrows(workOrderTable, ...
@@ -251,7 +285,7 @@ end
 
 disp(['[', datestr(now, datetimeFormat), '] Done!'])
 
-%% Filtering Data by Time Range of Interest
+%% Filtering Data by Date Range of Interest
 
 if exist('DATE_RANGE_OF_INTEREST', 'var')
     disp(' ')
@@ -263,14 +297,19 @@ if exist('DATE_RANGE_OF_INTEREST', 'var')
     datetimeRangeOfInterest = [ ...
         dateshift(DATE_RANGE_OF_INTEREST(1), 'start', 'day'), ...
         dateshift(DATE_RANGE_OF_INTEREST(2), 'end', 'day')];
+    datetimeRangeToLoadData = [ ...
+        datetimeRangeOfInterest(1) ...
+        - hours(HOURS_TO_LOAD_BEFORE_DATE_RANGE), ...
+        datetimeRangeOfInterest(2) ...
+        + hours(HOURS_TO_LOAD_AFTER_DATE_RANGE)];
 
     workOrderTable( ...
-        workOrderTable.WorkDatetime<datetimeRangeOfInterest(1) ...
-        | workOrderTable.WorkDatetime>datetimeRangeOfInterest(2), ...
+        workOrderTable.WorkDatetime<datetimeRangeToLoadData(1) ...
+        | workOrderTable.WorkDatetime>datetimeRangeToLoadData(2), ...
         :) = [];
     gpsLocTable( ...
-        gpsLocTable.localDatetime<datetimeRangeOfInterest(1) ...
-        | gpsLocTable.localDatetime>datetimeRangeOfInterest(2), ...
+        gpsLocTable.localDatetime<datetimeRangeToLoadData(1) ...
+        | gpsLocTable.localDatetime>datetimeRangeToLoadData(2), ...
         :) = [];
 
     disp(['    [', datestr(now, datetimeFormat), ...
@@ -335,6 +374,9 @@ proBar = betterProBar(numOfGpsSamps);
 % necessary. As the last resort, if none of these fields are present, we
 % will guess the vehicle ID based on history datasets.
 if ismember('ASSET_LABEL', gpsLocTable.Properties.VariableNames)
+    % INDOT example dataset for winter operations V1
+    % ("20220718_IndotExampleGpsData", i.e., "20201001 AVL GPS Data for
+    % Purdue v1.csv").
     originalAssetLabels = gpsLocTable.ASSET_LABEL;
 
     % Break the string into ID and name. Example ASSET_LABEL: "64267 DODGE
@@ -358,6 +400,9 @@ if ismember('ASSET_LABEL', gpsLocTable.Properties.VariableNames)
         proBar.progress;
     end
 elseif ismember('COMMISION_NUMBER', gpsLocTable.Properties.VariableNames)
+    % INDOT example dataset for winter operations V2
+    % ("20220804_IndotGpsData_Winter", i.e., "20220804 AVL GPS Data for
+    % Purdue v2.csv").
     vehIds = gpsLocTable.COMMISION_NUMBER;
 
     for idxGpsSamp = 1:numOfGpsSamps
@@ -367,15 +412,20 @@ elseif ismember('COMMISION_NUMBER', gpsLocTable.Properties.VariableNames)
         proBar.progress;
     end
 else
+    % Fallback plan: guess the vehicle information based on Howell's
+    % dataset ("20220221_ExampleData", i.e.,
+    % "20210301_to_20210501_avl.zip").
+    %
     % We will use the inventory information to deduce vehIds and vehNames
     % based on the sensor ID.
     if ~exist('truckTable', 'var')
-        truckTable = readtable(pathToTrackCsv);
+        truckTable = readtable(pathToTruckCsv);
     end
 
     for idxGpsSamp = 1:numOfGpsSamps
         % INDOT and Parson's call this vehicleId, but it is essentually the
-        % ID for the Parson's GPS sensor.
+        % ID for the Parson's GPS sensor. For example, we have sensor ID
+        % "693" for vehicle "64264,LaPorte,LaPorte,MDC-006".
         curSensorId = gpsLocTable.VEHICLE_ID(idxGpsSamp);
         curIdxTruck = find(truckTable.vehicleId == curSensorId);
 
@@ -541,8 +591,9 @@ disp(['[', datestr(now, datetimeFormat), ...
     ' work order ID and vehicle ID ...'])
 
 % It is not clear how many work order groups we will get, but it is at
-% least the number of unique work order IDs. We will find work order groups
-% for each unique work order ID and concatenate the results.
+% least the number of unique work order IDs (if we allow empty entries for
+% one unique work order ID). We will find work order groups for each unique
+% work order ID and concatenate the results.
 uniqueWOIds = unique(parsedVehWorkOrderTable.workOrderId);
 numOfUniqueWOIds = length(uniqueWOIds);
 
@@ -559,6 +610,21 @@ for idxUniqueWOId = 1:numOfUniqueWOIds
     curWOId = uniqueWOIds(idxUniqueWOId);
     curEntryIndicesInParsedVehWOT = find( ...
         parsedVehWorkOrderTable.workOrderId == curWOId);
+
+    % Make sure the current work order actually overlaps with the date
+    % range of interest, DATE_RANGE_OF_INTEREST or datetimeRangeOfInterest
+    % (instead of the "extended" time range for loading data,
+    % datetimeRangeToLoadData).
+    if exist('DATE_RANGE_OF_INTEREST', 'var')
+        curLDTs = table2array(parsedVehWorkOrderTable( ...
+            curEntryIndicesInParsedVehWOT, 'localDatetime'));
+
+        if (max(curLDTs)<datetimeRangeOfInterest(1)) ...
+                || (min(curLDTs)>datetimeRangeOfInterest(2))
+            % No overlapping so there is no need to keep searching.
+            continue;
+        end
+    end
 
     curUniqueVehIds = unique( ...
         parsedVehWorkOrderTable.vehId(curEntryIndicesInParsedVehWOT));
@@ -646,7 +712,6 @@ if flagGenDebugFigs
     % Use an exponential curve to adjust the visualization so that recent
     % samples are highlighted.
     expFactorForMapping = 3;
-    interpRangeForMapping = ([0,24]).^expFactorForMapping;
 
     LINE_STYLE = '-';
     NA_LINE_STYLE = '--';
@@ -667,64 +732,114 @@ disp(['    [', datestr(now, datetimeFormat), ...
 % For progress feedback. We will get more updates because this procedure
 % takes a long time to finish.
 proBar = betterProBar(numOfWorkOrderGroups, 1000);
-% Debugging notes (with all records):
-%   - 5435
-%    - 5432: No GPS records
-%   - 24863, 24864 (For example work order # 20848444; veh # 63519)
-%    - 1:numOfWorkOrderGroups
+% Debugging notes
+%   With all records:
+%       - 5435
+%        - 5432: No GPS records
+%       - 24863, 24864 (For example work order # 20848444; veh # 63519)
+%   For 2021/1/31:
+%       - 1146: A multi-day work order.
 for idxWOG = 1:numOfWorkOrderGroups
     % Make sure the work orders in this work order group do have the same
     % records.
-    curWOs = parsedVehWorkOrderTable( ...
+    curVehWOs = parsedVehWorkOrderTable( ...
         workOrderGroupTable.indicesEntryInParsedVehWOT{idxWOG}, :);
-    cur1stWO = curWOs(1,:);
 
-    curWOsRecords = curWOs;
-    curWOsRecords.idxInWorkOrderTable = [];
-    curWOsRecords.totalHrs = [];
-    cur1stWORecs = cur1stWO;
-    cur1stWORecs.idxInWorkOrderTable = [];
-    cur1stWORecs.totalHrs = [];
+    % The localDatetime field should already be sorted.
+    assert(issorted(curVehWOs.localDatetime, 'ascend'), ...
+        'Field localDatetime of curWOs is not sorted!')
 
-    unexpectedWOs = setdiff(curWOsRecords, cur1stWORecs);
-    if ~isempty(unexpectedWOs)
+    cur1stVehWO = curVehWOs(1,:);
+    curWOId = cur1stVehWO.workOrderId;
+    curVehId = cur1stVehWO.vehId;
+
+    flagIsMultiDayVehWO = false;
+
+    % First, check whether the vehicle work order entries span over
+    % multiple days. If so, output these entries into a log file for
+    % debugging.
+    %
+    % Fields to keep: localDatetime, workOrderId, vehId, vehName, actId,
+    % actName, unixTime, and idxWorkOrderGroup.
+    %
+    % Note that the localDatetime should be the work order date with time
+    % 12:00:00.
+    curVehWOsRecords = curVehWOs;
+    curVehWOsRecords.idxInWorkOrderTable = [];
+    curVehWOsRecords.totalHrs = [];
+    cur1stVehWORecs = cur1stVehWO;
+    cur1stVehWORecs.idxInWorkOrderTable = [];
+    cur1stVehWORecs.totalHrs = [];
+
+    unexpectedVehWOs = setdiff(curVehWOsRecords, cur1stVehWORecs);
+    if ~isempty(unexpectedVehWOs)
         % Compare all fields except localDatetime, unixTime, and
         % idxWorkOrderGroup (this should be the same for all these
         % entries).
+        %
+        % Fields that should be the same: workOrderId, vehId, vehName,
+        % actId, and actName.
         if isempty(setdiff( ...
-                unexpectedWOs(:, 2:6), cur1stWORecs(:, 2:6) ...
+                unexpectedVehWOs(:, 2:6), cur1stVehWORecs(:, 2:6) ...
                 ))
             % It can be concluded that only the time fields, i.e.,
             % localDatetime and unixTime, have different entries.
             warning(['[', datestr(now, datetimeFormat), ...
-                '] Mutli-day work order (#', ...
-                num2str(cur1stWORecs.workOrderId), ...
+                '] Mutli-day veh work order (#', ...
+                num2str(cur1stVehWORecs.workOrderId), ...
                 ') detected!']);
 
             % Save all entries of the current work order into one .csv
             % file.
-            writetable( curWOs, fullfile(pathToSaveMultiDayWOEntries, ...
+            writetable( curVehWOs, fullfile(pathToSaveMultiDayWOEntries, ...
                 ['curVehWOs_WOG_', num2str(idxWOG), ...
-                '_WO_', num2str(cur1stWORecs.workOrderId), '.csv']) );
+                '_WO_', num2str(cur1stVehWORecs.workOrderId), '.csv']) );
+            flagIsMultiDayVehWO = true;
         else
-            error(['[', datestr(now, datetimeFormat), ...
-                '] Work orders in group #', num2str(idxWOG), ...
+            warning(['[', datestr(now, datetimeFormat), ...
+                '] Vehicle work orders in group #', num2str(idxWOG), ...
                 ' have different records!']);
+
+            % Save all entries of the current work order into one .csv
+            % file.
+            writetable( curVehWOs, fullfile(pathToSaveMultiDayWOEntries, ...
+                ['ContradictingEntries_', ...
+                'curVehWOs_WOG_', num2str(idxWOG), ...
+                '_WO_', num2str(cur1stVehWORecs.workOrderId), '.csv']) );
         end
     end
 
-    curDate = cur1stWO.localDatetime;
-    curVehId = cur1stWO.vehId;
+    % Second, determine the time range of the activity. We will fetch and
+    % inspect all work order entries with this work order ID.
+    %
+    % Note that in the previous step, we were only checking work order
+    % entries for vehicles, but here, we are looking at all available work
+    % orders. As a result, the answer to "is this a multi-day work order"
+    % may be different.
+    allWOsWithThisId = workOrderTable(workOrderTable.WO==curWOId, :);
 
     % We will inspect a time range, including the start date but excluding
     % the end date (24:00:00 of "today" or 00:00:00 of "tomorrow").
-    curDateStart = dateshift(curDate, 'start', 'day');
-    curDateEnd = dateshift(curDate, 'end', 'day');
+    curLDTs = allWOsWithThisId.WorkDatetime;
+    curStartDatetime = dateshift( ...
+        min(curLDTs), 'start', 'day');
+    curEndDatetime = dateshift( ...
+        max(curLDTs), 'end', 'day');
 
-    datetimeWindowStart = curDateStart ...
+    % Use a time range instead of a single date to support multi-date work
+    % orders.
+    curDatetimeRange = [curStartDatetime, curEndDatetime];
+
+    datetimeWindowStart = curStartDatetime ...
         - hours(HOURS_BEFORE_WORK_DATE_TO_SEARCH);
-    datetimeWindowEnd = curDateEnd ...
+    datetimeWindowEnd = curEndDatetime ...
         + hours(HOURS_AFTER_WORK_DATE_TO_SEARCH);
+
+    % Adjust the interpolation range based on the number of days to
+    % consider.
+    interpRangeForMapping ...
+        = ([0, hours(datetimeWindowEnd-datetimeWindowStart)]) ...
+        .^expFactorForMapping;
 
     % Comparing the Unix time numbers is slightly faster than comparing the
     % corresponding datetime objects (4.950038 s vs 5.131865 s in the test
@@ -798,24 +913,49 @@ for idxWOG = 1:numOfWorkOrderGroups
             numOfColors = size(colorOrder, 1);
 
             % Fetch the information on the work orders. We already have
-            % curData and curVehId.
-            curWOId = cur1stWO.workOrderId;
-            curActId = cur1stWO.actId;
+            % curWOId, curData and curVehId.
+            curActId = cur1stVehWO.actId;
             curActName = capitalize(lower(regexprep( ...
-                cur1stWO.actName{1}, ' +', ' ')));
+                cur1stVehWO.actName{1}, ' +', ' ')));
             curVehName = capitalize(lower(regexprep( ...
-                cur1stWO.vehName{1}, ' +', ' ')));
+                cur1stVehWO.vehName{1}, ' +', ' ')));
 
-            % For easier information aggregation later, mark:
-            %   date, vehicle, work order
-            % in that particular order, because the same "date" covers
-            % multiple vehicles, while the save "vehicle" in that date may
-            % have multiple "work orders".
+            % For easier information aggregation later, mark in the prefix
+            % label
+            %       date, vehicle, and work order
+            % of that particular order, because the same "date" may
+            % involves multiple vehicles, while the same "vehicle" in that
+            % date may have multiple "work orders".
+            %
+            % Convert local date to a string as (1) one date for single-day
+            % work orders or (2) a date range for multi-date work orders.
+            tableToExport.LocalDate
+            if dateshift(curDatetimeRange(1), 'start', 'day') ...
+                    == dateshift(curDatetimeRange(2), 'start', 'day')
+                % All the work order entries are in the same day.
+                curDatetimeRangeStr = datestr(curDatetimeRange(1), ...
+                    DATESTR_FORMAT_DATE);
+
+                % Also make sure the old way of looking for multi-day work
+                % orders agree with the new method.
+                assert(~flagIsMultiDayVehWO, ...
+                    'Unexpected flagIsMultiDayWO!')
+            else
+                % This is a multi-day work order. Note that in this case
+                % flagIsMultiDayVehWO may indicate otherwise, but we will
+                % use all work order entries (instead of only the vehicle
+                % ones) to decide the date range for loading GPS records.
+                curDatetimeRangeStr = ['MultiDay_', ...
+                    datestr(curDatetimeRange(1), DATESTR_FORMAT_DATE), ...
+                    ' to ', ...
+                    datestr(curDatetimeRange(2), DATESTR_FORMAT_DATE)];
+            end
             debugFixFileNamePrefix = [ ...
-                datestr(curDate, DATETIME_FORMAT_DATE_LABEL), ...
+                curDatetimeRangeStr, ...
                 '_VehID_', num2str(curVehId), ...
                 '_WO_', num2str(curWOId) ...
                 ];
+
             curPathToSaveMapFig = fullfile(pathToSaveResults, ...
                 [debugFixFileNamePrefix, '_', 'Map']);
             curPathToSaveMap3DFig = fullfile(pathToSaveResults, ...
@@ -863,7 +1003,7 @@ for idxWOG = 1:numOfWorkOrderGroups
                 maxMileV = max(allMilesForCurWOG);
                 minMileV = min(allMilesForCurWOG);
 
-                curActTotalHs = sum(curWOs.totalHrs);
+                curActTotalHs = sum(curVehWOs.totalHrs);
 
                 % Add continuous tracks one by one to the figures.
                 hFigGpsOnMap = figure( ...
@@ -927,7 +1067,7 @@ for idxWOG = 1:numOfWorkOrderGroups
                         end
 
                         hoursAfterStartOfDay = hours( ...
-                            curDatetime - curDateStart);
+                            curDatetime - curStartDatetime);
                         interpQueryPt = hoursAfterStartOfDay ...
                             .^expFactorForMapping;
 
@@ -1119,7 +1259,7 @@ for idxWOG = 1:numOfWorkOrderGroups
                 dateStrFormat = 'yyyy/mm/dd';
                 curDetectedWorkInH = sum(segLengthsInH(2:end));
                 curDetectedWorkInM = sum(segLengthsInM(2:end));
-                titleToPlot = {[datestr(curDate, dateStrFormat), ...
+                titleToPlot = {[strrep(curDatetimeRangeStr, '_', ' '), ...
                     ', WO #', num2str(curWOId), ...
                     ', Activity #', num2str(curActId), ...
                     ' - ', curActName]; ...
@@ -1179,7 +1319,8 @@ for idxWOG = 1:numOfWorkOrderGroups
                 save(curPathToSaveExtractedInfo, ...
                     'uniqueRNs', 'segLengthsInH', 'segLengthsInM', ...
                     'titleToPlot', 'uniqueRNLegendLabels', ...
-                    'curDate', 'curWOId', ...
+                    'curDatetimeRange', 'curDatetimeRangeStr', ...
+                    'curWOId', ...
                     'curActId', 'curActName', ...
                     'curVehId', 'curVehName', ...
                     'curActTotalHs', ...
@@ -1304,7 +1445,7 @@ for idxWOG = 1:numOfWorkOrderGroups
                         end
 
                         hoursAfterStartOfDay = hours( ...
-                            curDatetime - curDateStart);
+                            curDatetime - curStartDatetime);
                         interpQueryPt = hoursAfterStartOfDay ...
                             .^expFactorForMapping;
 
@@ -1628,7 +1769,7 @@ for idxWOG = 1:numOfWorkOrderGroups
                         end
 
                         hoursAfterStartOfDay = hours( ...
-                            curDatetime - curDateStart);
+                            curDatetime - curStartDatetime);
                         interpQueryPt = hoursAfterStartOfDay ...
                             .^expFactorForMapping;
 
@@ -1690,7 +1831,8 @@ for idxWOG = 1:numOfWorkOrderGroups
                 % Add the annotation lines. First, in order to plot lines
                 % over multiple subplots, create an invisible axes as the
                 % shared canvas. Note that this will interrupt with the
-                % access to the tile layout (nexttile will not work).
+                % access to the tile layout (nexttile will not work after
+                % this).
                 hAxCanvas = axes;
                 set(hAxCanvas, 'Position', [0, 0, 1, 1], 'Visible', false);
                 % Then add the annotation lines one by one.
@@ -1729,7 +1871,7 @@ for idxWOG = 1:numOfWorkOrderGroups
                 flagGenDebugFigs = false;
 
                 %% Generate a work order verification report.
-                reportDateFormat = DATETIME_FORMAT_DATE_LABEL;
+                reportDateFormat = DATESTR_FORMAT_DATE;
                 reportDigitsAfterDecPt = 2;
                 delimiterForWOIds = ' & ';
                 % We will add 'MatchingScore' and 'Note' by comparing
@@ -1740,7 +1882,7 @@ for idxWOG = 1:numOfWorkOrderGroups
                 %   - delta < -maxAllowedMismatchInH
                 %     Warning: Over-reporting... Missing GPS records?
                 % MatchingScore will be zero for above cases. Otherwise,
-                % the score will be linearly interpolated based on
+                % the score will be linearly interpolated based on three
                 % (abs(delta), score) pairs:
                 %    (0, 100%)
                 %     (mismatchInHFor90PercScore, 90%)
@@ -1768,12 +1910,14 @@ for idxWOG = 1:numOfWorkOrderGroups
                 %   'titleToPlot', 'uniqueRNLegendLabels',
                 %   'curMileOverTimeFigXLimit'.
                 curVarsToLoad = { ...
-                    'curDate', 'curVehId', 'curVehName', ...
+                    'curDatetimeRange', 'curDatetimeRangeStr', ...
+                    'curVehId', 'curVehName', ...
                     'curWOId', 'curActId', 'curActName', ...
                     'curActTotalHs', 'curDetectedWorkInH', ...
                     'curDetectedWorkInM'};
 
-                LocalDate = cell(numOfCacheFs, 1);
+                [LocalDatetimeStart, LocalDatetimeEnd, LocalDateRangeStr] ...
+                    = deal(cell(numOfCacheFs, 1));
                 VehId = nan(numOfCacheFs, 1);
                 VehName = cell(numOfCacheFs, 1);
                 % We will eventually merge the WOId field so that it is a
@@ -1790,7 +1934,11 @@ for idxWOG = 1:numOfWorkOrderGroups
                         dirCacheFiles(idxF).folder, ...
                         dirCacheFiles(idxF).name), curVarsToLoad{:});
 
-                    LocalDate{idxF} = cachedRes.curDate;
+                    LocalDatetimeStart{idxF} ...
+                        = cachedRes.curDatetimeRange(1);
+                    LocalDatetimeEnd{idxF} = cachedRes.curDatetimeRange(2);
+                    LocalDateRangeStr{idxF} ...
+                        = cachedRes.curDatetimeRangeStr;
                     VehId(idxF) = cachedRes.curVehId;
                     VehName{idxF} = cachedRes.curVehName;
                     WOIds{idxF} = num2str(cachedRes.curWOId);
@@ -1802,28 +1950,28 @@ for idxWOG = 1:numOfWorkOrderGroups
                 end
 
                 % Add UnixTime for easier sorting.
-                UnixTime = cellfun(@(d) posixtime(d), LocalDate);
-                % Convert LocalDate to a list of strings.
-                LocalDate = cellfun(@(d) ...
-                    datestr(d, reportDateFormat), LocalDate, ...
-                    'UniformOutput', false);
+                UnixTimeStart = cellfun(@(d) posixtime(d), ...
+                    LocalDatetimeStart);
 
-                loadedResTable = table(UnixTime, ...
-                    LocalDate, VehId, VehName, ...
+                loadedResTable = table(UnixTimeStart, ...
+                    LocalDatetimeStart, LocalDatetimeEnd, ...
+                    LocalDateRangeStr, VehId, VehName, ...
                     WOIds, ActId, ActName, ...
                     ActTotalHs, DetectedWorkInH, DetectedWorkInM);
 
-                % Then order the table by date, vehicle ID, work order ID,
-                % activity ID, and work hours.
+                % Then order the table by start date, date range, vehicle
+                % ID, work order ID, activity ID, and work hours.
                 loadedResTable = sortrows(loadedResTable, ...
-                    {'UnixTime', 'VehId', 'WOIds', 'ActId', 'ActTotalHs'});
+                    {'UnixTimeStart', 'LocalDateRangeStr', ...
+                    'VehId', 'WOIds', 'ActId', 'ActTotalHs'});
 
-                % Group work orders of the same day for the same vehicle to
-                % compute the total reported and detected work hours.
+                % Group work orders of the same time range for the same
+                % vehicle to compute the total reported and detected work
+                % hours. VeriRepTab is short for verification report table.
                 VeriRepTab = loadedResTable;
                 cntNewRecs = 0;
-                colsToCompare = {'UnixTime', 'LocalDate', 'VehId', ...
-                    'VehName', 'ActId', 'ActName'};
+                colsToCompare = {'LocalDateRangeStr', ...
+                    'VehId', 'VehName', 'ActId', 'ActName'};
                 while cntNewRecs < (size(VeriRepTab, 1) - 1)
                     cntNewRecs = cntNewRecs+1;
 
@@ -1887,7 +2035,7 @@ for idxWOG = 1:numOfWorkOrderGroups
                     end
                 end
 
-                % Export the result into an .scv file, with an warning for
+                % Export the result into an .scv file, with awarning for
                 % each too disagreeing pair of total reported and detected
                 % work hours.
                 tableToExport = VeriRepTab;
@@ -1913,9 +2061,25 @@ for idxWOG = 1:numOfWorkOrderGroups
                     tableToExport.MatchingScore, ...
                     'UniformOutput', false);
 
+                % Make sure only work orders for date range of interest is
+                % exported
+                if exist('DATE_RANGE_OF_INTEREST', 'var')
+                    for idxTabEntryToExp = 1:size(tableToExport, 1)
+                        assert(~( ...
+                            tableToExport.LocalDatetimeStart{ ...
+                            idxTabEntryToExp} ...
+                            >=datetimeRangeOfInterest(2) ...
+                            || tableToExport.LocalDatetimeEnd{ ...
+                            idxTabEntryToExp} ...
+                            <datetimeRangeOfInterest(1)), ...
+                            ['Work order time range does not ', ...
+                            'overlap with the date range of interest!']);
+                    end
+                end
+
                 % Only keep important fields to export.
                 tableToExport = tableToExport(:, { ...
-                    'LocalDate', 'VehId', 'VehName', 'WOIds', ...
+                    'LocalDateRangeStr', 'VehId', 'VehName', 'WOIds', ...
                     'ActId', 'ActName', 'ActTotalHs', ...
                     'DetectedWorkInH', 'DetectedWorkInMil', ...
                     'MatchingScore', 'Note' ...
@@ -1924,7 +2088,8 @@ for idxWOG = 1:numOfWorkOrderGroups
                 absPathToSaveWorkOrderVeriReport = fullfile( ...
                     pathToSaveResults, ...
                     'Report_WorkOrderVerificaiton.csv');
-                writetable(tableToExport, absPathToSaveWorkOrderVeriReport);
+                writetable(tableToExport, ...
+                    absPathToSaveWorkOrderVeriReport);
 
                 %% Automatically Generate Work Orders
                 % We will pre-fill as much info as possible. First, scan
@@ -1936,7 +2101,7 @@ for idxWOG = 1:numOfWorkOrderGroups
                 %   'titleToPlot', 'uniqueRNLegendLabels',
                 %   'curMileOverTimeFigXLimit'.
 
-                %     curDate
+                %     curDatetimeRange
                 %
                 %     curVehId
                 %
