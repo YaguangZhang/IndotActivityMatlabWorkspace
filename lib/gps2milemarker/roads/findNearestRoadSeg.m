@@ -59,6 +59,10 @@ nearestSegs = indotRoads(...
     | boundingBoxes(1,2,:) > YMax ...
     | boundingBoxes(2,2,:) < Ymin));
 
+% % Ignore empty segments.
+%   nearestSegs = nearestSegs( ...
+%       arrayfun(@(r) ~(isempty(r.X) || isempty(r.Y)), nearestSegs));
+
 % Calculate the distances from the qurrying location to these segments.
 distRoadSegs = zeros(length(nearestSegs),1);
 for idxRoadSeg = 1:length(nearestSegs)

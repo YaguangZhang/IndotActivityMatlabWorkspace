@@ -69,7 +69,9 @@ for idxSamp = 1:numOfGpsSamps
         [roadNames{idxSamp}, curMile, ~, curNearestDist] ...
             = gpsCoor2MileMarker(lats(idxSamp), ...
             lons(idxSamp));
-    catch
+    catch err
+        warning('Error in gpsCoor2MileMarker!')
+        disp(getReport(err))
         % Fallback values.
         curNearestDist = inf;
         roadNames{idxSamp} = '';
