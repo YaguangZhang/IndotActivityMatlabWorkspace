@@ -36,19 +36,31 @@ DATESTR_FORMAT_DATE = 'yyyymmdd';
 DATE_RANGE_OF_INTEREST = datetime(2021, 1, [31,31], ...
     'TimeZone', LOCAL_TIME_ZONE, 'Format', DATETIME_FORMAT);
 
-% We need to load and pre-process GPS data (mainly to determine mile
-% markers; very time-consuming) beyond the user-defined date range of
-% interest (e.g., if a work order can last at most two days, then both one
-% day before and one day after the date range).
-%
-%   - Hours to load & preprocess GPS data before the start (00:00:00) of
-%   the date range of interest, just in case, e.g., night shifts are
-%   involved.
-HOURS_TO_LOAD_BEFORE_DATE_RANGE = 24;
-%   - Hours to load & preprocess GPS data after the end (24:00:00) of the
-%   date range of interest, just in case, e.g., the work date is
-%   mislabeled.
-HOURS_TO_LOAD_AFTER_DATE_RANGE = 24;
+% Set this to true to inspect work order entries day by day. Set this to
+% false to group work order entries over multiple days with the same ID and
+% inspect these groups one by one.
+FLAG_INSPECT_WOS_DAY_BY_DAY = true;
+
+if FLAG_INSPECT_WOS_DAY_BY_DAY
+    % No need to load data out of the date range of interest in the
+    % day-by-day inspection mode.
+    [HOURS_TO_LOAD_BEFORE_DATE_RANGE, ...
+        HOURS_TO_LOAD_AFTER_DATE_RANGE] = deal(0);
+else
+    % We need to load and pre-process GPS data (mainly to determine mile
+    % markers; very time-consuming) beyond the user-defined date range of
+    % interest (e.g., if a work order can last at most two days, then both
+    % one day before and one day after the date range).
+    %
+    %   - Hours to load & preprocess GPS data before the start (00:00:00)
+    %   of the date range of interest, just in case, e.g., night shifts are
+    %   involved.
+    HOURS_TO_LOAD_BEFORE_DATE_RANGE = 24;
+    %   - Hours to load & preprocess GPS data after the end (24:00:00) of
+    %   the date range of interest, just in case, e.g., the work date is
+    %   mislabeled.
+    HOURS_TO_LOAD_AFTER_DATE_RANGE = 24;
+end
 
 % Additionally, for any work order, GPS records before and after its date
 % (or dates if the work order covers multiple days) can be analyzed for
@@ -147,7 +159,7 @@ FLAG_GEN_DEBUG_FIGS = true;
 %     0–100,000    0.002 USD per each (2.00 USD per 1000)
 %   - Ref:
 % https://developers.google.com/maps/documentation/maps-static/usage-and-billing
-NUM_OF_ACT_TRACK_DEBUG_FIGS = 10; %1000;
+NUM_OF_ACT_TRACK_DEBUG_FIGS = 1000; %10;
 
 % Maximum allowed distance to a road for the GPS sample to be labeled as on
 % that road.
@@ -739,6 +751,19 @@ proBar = betterProBar(numOfWorkOrderGroups, 1000);
 %       - 24863, 24864 (For example work order # 20848444; veh # 63519)
 %   For 2021/1/31:
 %       - 1146: A multi-day work order.
+%
+%   For (manually) creating frame-by-frame overview figs:
+%       We are interested in two scenarios, as listed below (with example
+%       work order entries we select).
+%         - Simple one-road patrolling
+%           VehId:     63100
+%            WOIds: 20848885
+%         - Simple one-road snow & ice removal
+%           VehId:     62894
+%            WOIds: 20850229
+%         - Complicated multi-road snow & ice removal
+%           VehId:     61290
+%            WOIds: 20850220
 for idxWOG = 1:numOfWorkOrderGroups
     % Make sure the work orders in this work order group do have the same
     % records.
@@ -929,9 +954,9 @@ for idxWOG = 1:numOfWorkOrderGroups
             %
             % Convert local date to a string as (1) one date for single-day
             % work orders or (2) a date range for multi-date work orders.
-            tableToExport.LocalDate
             if dateshift(curDatetimeRange(1), 'start', 'day') ...
-                    == dateshift(curDatetimeRange(2), 'start', 'day')
+                    == dateshift(curDatetimeRange(2)-seconds(0.001), ...
+                    'start', 'day')
                 % All the work order entries are in the same day.
                 curDatetimeRangeStr = datestr(curDatetimeRange(1), ...
                     DATESTR_FORMAT_DATE);
@@ -1291,9 +1316,15 @@ for idxWOG = 1:numOfWorkOrderGroups
 
                 % A 3D version.
                 view(3);
-                if ~FLAG_DISABLE_SAVEAS_FIG
-                    saveas(hFigGpsOnMap, [curPathToSaveMap3DFig, '.fig']);
-                end
+
+                % if ~FLAG_DISABLE_SAVEAS_FIG
+                %     saveas(hFigGpsOnMap, [curPathToSaveMap3DFig,
+                %     '.fig']);
+                % end
+
+                % Always save a .fig file of the 3D map for debugging
+                % purposes.
+                saveas(hFigGpsOnMap, [curPathToSaveMap3DFig, '.fig']);
                 saveas(hFigGpsOnMap, [curPathToSaveMap3DFig, '.jpg']);
 
                 % Save the mile marker figure.
@@ -1348,8 +1379,8 @@ for idxWOG = 1:numOfWorkOrderGroups
                 % road. TODO: Adjust tile height based on data range (could
                 % be done by assigning way more than enough tiles, e.g.,
                 % 100, and use a range of them for each road).
-                num2Tiles = length(uniqueRNs);
-                hTileLayoutMiOverTSepRs = tiledlayout(num2Tiles, 1, ...
+                numOfTiles = length(uniqueRNs);
+                hTileLayoutMiOverTSepRs = tiledlayout(numOfTiles, 1, ...
                     'Padding', 'tight', 'TileSpacing', 'tight');
 
                 % Construct the vectors to map between tile indices and
@@ -1359,7 +1390,7 @@ for idxWOG = 1:numOfWorkOrderGroups
                 uniRIndicesForTs = uniRIndicesForTs + 1;
                 uniRIndicesForTs = [uniRIndicesForTs; 1]; %#ok<AGROW>
 
-                tileIndicesForUniRs = [(1:num2Tiles)', uniRIndicesForTs];
+                tileIndicesForUniRs = [(1:numOfTiles)', uniRIndicesForTs];
                 tileIndicesForUniRs = sortrows(tileIndicesForUniRs, 2);
                 tileIndicesForUniRs = tileIndicesForUniRs(:,1);
 
@@ -1367,7 +1398,7 @@ for idxWOG = 1:numOfWorkOrderGroups
                 hsSegPatchCellSepRoads = cell(numOfUniqueRNs, 1);
 
                 % Adjust subfigure appearance.
-                for idxTile = 1:num2Tiles
+                for idxTile = 1:numOfTiles
                     nexttile(idxTile);
                     hold on; grid on; grid minor;
 
@@ -1399,7 +1430,7 @@ for idxWOG = 1:numOfWorkOrderGroups
                     ylabel({curUniRN, 'Mile Marker'});
 
                     % No need to show x ticks except in the bottom tile.
-                    if idxTile~=num2Tiles
+                    if idxTile~=numOfTiles
                         xticklabels([]);
                     end
                 end
@@ -1535,6 +1566,28 @@ for idxWOG = 1:numOfWorkOrderGroups
                                 % lines via command annotation.
                             end
                         end
+                    end
+
+                    % We will adjust y axis range so that the vertical
+                    % distance (workload) in different tiles match
+                    % visually.
+                    curYLims = nan(numOfTiles, 2);
+                    for idxTile = 1:numOfTiles
+                        nexttile(idxTile);
+                        ylim('tight');
+                        curYLims(idxTile, :) = ylim;
+                    end
+                    maxYLimRange = max(curYLims(:,2)-curYLims(:,1));
+
+                    % Skip the last tile.
+                    for idxTile = 1:(numOfTiles-1)
+                        newYLim = (sum(curYLims(idxTile, :)) ...
+                            + [-1 1].*maxYLimRange)/2;
+                        if newYLim(1) < 0
+                            newYLim = newYLim - newYLim(1);
+                        end
+                        nexttile(idxTile);
+                        ylim(newYLim);
                     end
 
                     % Semi-tranparent rectangle patches for road segments.
@@ -1690,6 +1743,10 @@ for idxWOG = 1:numOfWorkOrderGroups
                 % seems a little different.
                 nexttile(1);
                 title(titleToPlot, 'FontSize', 11);
+
+                % Hide the mile markers (ylables) of the last tile.
+                nexttile(numOfTiles);
+                yticklabels([]);
 
                 % Save the mile marker figure.
                 if ~FLAG_DISABLE_SAVEAS_FIG
@@ -1893,7 +1950,7 @@ for idxWOG = 1:numOfWorkOrderGroups
                     'Warning: Over-reporting';
 
                 mismatchInHFor90PercScore = 1; % => 90% score.
-                maxAllowedMismatchInH = 3; % => 0% score.
+                maxAllowedMismatchInH = 5; % => 0% score.
                 scoreFct = @(delta) interp1( ...
                     [0, mismatchInHFor90PercScore, ...
                     maxAllowedMismatchInH], ...
@@ -2035,7 +2092,7 @@ for idxWOG = 1:numOfWorkOrderGroups
                     end
                 end
 
-                % Export the result into an .scv file, with awarning for
+                % Export the result into an .scv file, with a warning for
                 % each too disagreeing pair of total reported and detected
                 % work hours.
                 tableToExport = VeriRepTab;
@@ -2087,9 +2144,49 @@ for idxWOG = 1:numOfWorkOrderGroups
 
                 absPathToSaveWorkOrderVeriReport = fullfile( ...
                     pathToSaveResults, ...
-                    'Report_WorkOrderVerificaiton.csv');
+                    'Report_WorkOrderVerificaiton');
                 writetable(tableToExport, ...
-                    absPathToSaveWorkOrderVeriReport);
+                    [absPathToSaveWorkOrderVeriReport, '.csv']);
+
+                workOrderVeriReport = tableToExport;
+                workOrderVeriReportRaw = VeriRepTab;
+                save([absPathToSaveWorkOrderVeriReport, '.mat'], ...
+                    'workOrderVeriReport', 'workOrderVeriReportRaw');
+
+                %% Plots for MatchingScore
+
+                hFigScoreEcdf = figure;
+                ecdf(workOrderVeriReportRaw.MatchingScore);
+                xlabel('Matching Score'); ylabel('ECDF');
+                grid on; grid minor;
+                saveas(hFigScoreEcdf, fullfile(pathToSaveResults, ...
+                    'Report_MatchingScore_ECDF.jpg'));
+
+                hFigScoreHist = figure;
+                histogram(workOrderVeriReportRaw.MatchingScore);
+                xlabel('Matching Score'); ylabel('Occurance');
+                grid on; grid minor;
+                saveas(hFigScoreHist, fullfile(pathToSaveResults, ...
+                    'Report_MatchingScore_Hist.jpg'));
+
+                diffWHs = VeriRepTab.DetectedWorkInH ...
+                    - VeriRepTab.ActTotalHs;
+
+                hFigDiffWHsEcdf = figure;
+                ecdf(diffWHs);
+                xlabel('Detected Work Hours Minus Reported Work Hours');
+                ylabel('ECDF');
+                grid on; grid minor;
+                saveas(hFigDiffWHsEcdf, fullfile(pathToSaveResults, ...
+                    'Report_DiffWHs_ECDF.jpg'));
+
+                hFigDiffWHsHist = figure;
+                histogram(diffWHs);
+                xlabel('Detected Work Hours Minus Reported Work Hours');
+                ylabel('Occurance');
+                grid on; grid minor;
+                saveas(hFigDiffWHsHist, fullfile(pathToSaveResults, ...
+                    'Report_DiffWHs_Hist.jpg'));
 
                 %% Automatically Generate Work Orders
                 % We will pre-fill as much info as possible. First, scan
