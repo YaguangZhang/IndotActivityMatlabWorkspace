@@ -51,7 +51,7 @@ end
 
 %% Fetch Road Labels Based on Centerlines
 
-MAX_ALLOWED_DIST_FROM_ROAD_IN_M = 100;
+MAX_ALLOWED_DIST_FROM_ROAD_IN_M = 50;
 flagShowProgress = true;
 flagSuppressWarns = true;
 [roadLabels, miles, nearestDistsInM, nearestSegNames] ...

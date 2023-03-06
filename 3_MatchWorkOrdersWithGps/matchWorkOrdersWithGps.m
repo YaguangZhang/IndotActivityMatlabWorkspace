@@ -163,7 +163,7 @@ NUM_OF_ACT_TRACK_DEBUG_FIGS = 1000; %10;
 
 % Maximum allowed distance to a road for the GPS sample to be labeled as on
 % that road.
-MAX_ALLOWED_DIST_FROM_ROAD_IN_M = 100;
+MAX_ALLOWED_DIST_FROM_ROAD_IN_M = 50;
 
 % Set this to true to preprocess all GPS samples for their road names and
 % mile markers. TODO: update the work order processing procedure for the
