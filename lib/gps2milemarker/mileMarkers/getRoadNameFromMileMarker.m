@@ -1,5 +1,5 @@
 function [roadName, mileage] ...
-    = getRoadNameFromMileMarker(mileMarker, flagIgnoreT)
+    = getRoadNameFromMileMarker(mileMarker, flagIgnoreT, flagKeepOldRecs)
 %GETROADNAMEFROMMILEMARKER Get the highway name from a mile marker in the
 %INDOT mile marker database (2016).
 %
@@ -9,6 +9,17 @@ function [roadName, mileage] ...
 %   - flagIgnoreT
 %     Optional. Default to true. Set this to be true to relabel toll roads
 %     T80 and T90 as Interstate I80 and I90.
+%   - flagKeepOldRecs
+%     Optional. Default to false. Set this to be true to use old records
+%     (e.g., 'OLD S_238_0' => 'S238').
+%
+%     There are a few old records in the mile marker dataset, e.g., 'OLD
+%     S_238_0', 'U_OLD31_231', and 'OU_40_5'. They are ignored if
+%     flagKeepOldRecs is set to false (i.e., output roadName is set to '').
+%
+%     Some other labels are ignored, too, because the format does not match
+%     with what is expected, e.g., 'U_40_V9' and 'U_40_V9-1' (this could
+%     mean 9-1=8).
 %
 % Outputs:
 %   - roadName
@@ -17,20 +28,28 @@ function [roadName, mileage] ...
 %   - mileage
 %     An integer number for the mileage of the marker.
 %
-% There are a few old records in the mile marker dataset, e.g., 'OLD
-% S_238_0', 'U_OLD31_231', and 'OU_40_5', are ignored (i.e., output
-% roadName is set to '').
-%
 % Yaguang Zhang, Purdue, 02/02/2021
 
 % By default, ignore toll roads in Indiana (T80 and T90) and label them as
-% Interstate (I80 and I90).
+% Interstate (I80 and I90).kj
 if ~exist('flagIgnoreT', 'var')
     flagIgnoreT = true;
 end
 
+% By default, do not keep old mile marker road label records.
+if ~exist('flagKeepOldRecs', 'var')
+    flagKeepOldRecs = false;
+end
+
 postName = mileMarker.POST_NAME;
-[idxStart, idxEnd] = regexpi(postName, '[USIT]_\d+_\d+');
+
+if flagKeepOldRecs
+    postName = erase(postName, 'OLD_');
+    postName = erase(postName, 'OLD');
+    postName = erase(postName, 'O');
+end
+
+[idxStart, idxEnd] = regexpi(postName, '[USIT][_|-]\d+_\d+');
 if ~isempty(idxStart) && idxStart == 1 && idxEnd == length(postName)
     indicesUnderscore = strfind(postName, '_');
     assert(length(indicesUnderscore)==2, ...
