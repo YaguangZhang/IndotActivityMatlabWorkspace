@@ -16,23 +16,42 @@ function roadName = getRoadNameFromRoadSeg(roadSeg)
 % Interstate, seemingly nothing for Toll, and "N/E/S/E US/USHY/United
 % States Highway(-)#" as US.
 %
+% Example road name starting with "HWY": {'HWY 11 SW', 'HWY 111 SE', 'HWY
+% 135 NE', 'HWY 135 NW', 'HWY 135 SW', 'HWY 150 NE', 'HWY 150 NW', 'HWY 211
+% SE', 'HWY 335 NE', HWY 337 NW', 'HWY 337 SE', 'HWY 462 NW', 'HWY 550'  ,
+% 'HWY 62 NE', 'HWY 62 NW', 'HWY 64 NE', 'HWY 64 NW'}.
+%
 % Yaguang Zhang, Purdue, 02/02/2021
-
-% RegExp patterns (case-insensitive) to identify the road types.
-roadTypes = {'S', 'I', 'U'};
-regPats = {'(SR|State Rd|State Road|STATE HWY)( |-|)(\d+)', ...
-    '(INTERSTATE HIGHWAY|INTERSTATE|I)( |-|)(\d+)', ...
-    '(US|USHY|US HWY|US HIGHWAY|United States Highway)( |-|)(\d+)'};
 
 roadName = roadSeg.FULL_STREE;
 
-for idxType = 1:length(roadTypes)
-    ts = regexpi(roadName, regPats{idxType}, 'tokens');
-    if ~isempty(ts)
-        roadNumStr = ts{1}{3};
-        roadName = [roadTypes{idxType}, roadNumStr];
-        break;
+% Some highways are known.
+specialCases = {};% {'WALNUT', 'PIERCE RD', 'MARION RD', 'BROADWAY', 'HWY 150'};
+roadNameForSpeCases = {'S3', 'S4', 'S9', 'S53', 'U150'};
+
+curSpeCaseIdx = find(arrayfun(@(speCaseIdx) ...
+    contains(roadName, specialCases{speCaseIdx}, ...
+    'IgnoreCase', true), 1:length(specialCases)));
+
+if isempty(curSpeCaseIdx)
+    % RegExp patterns (case-insensitive) to identify the road types.
+    roadTypes = {'S', 'I', 'U'};
+    regPats = {'(SR|S.R.|State Rd|State Road|STATE HWY|STHY|ST RD|S R|IN)( |-|)(\d+)', ...
+        '(INTERSTATE HIGHWAY|INTERSTATE|INT|I)( |-|)(\d+)', ...
+        '(US|USHY|US HWY|U.S. HWY|US HIGHWAY|US ROUTE|U S ROUTE|United States Highway)( |-|)(\d+)'};
+
+    for idxType = 1:length(roadTypes)
+        ts = regexpi(roadName, regPats{idxType}, 'tokens');
+        if ~isempty(ts)
+            roadNumStr = ts{1}{3};
+            roadName = [roadTypes{idxType}, roadNumStr];
+            break;
+        end
     end
+else
+    assert(length(curSpeCaseIdx) == 1, ...
+        ['Unexpected duplicate special case road names: ', roadName, '!']);
+    roadName = roadNameForSpeCases{curSpeCaseIdx};
 end
 
 end
