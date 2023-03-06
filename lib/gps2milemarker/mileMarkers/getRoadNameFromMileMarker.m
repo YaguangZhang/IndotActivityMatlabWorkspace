@@ -66,7 +66,7 @@ else
     mileage = nan;
 end
 
-if flagIgnoreT
+if flagIgnoreT && strcmpi(roadName(1), 'T')
     tollRoads = {'T80', 'T90'};
     assert(ismember(roadName, tollRoads), ...
         ['Unknown toll road: ', roadName, '!'])
