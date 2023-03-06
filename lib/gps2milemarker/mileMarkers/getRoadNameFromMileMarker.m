@@ -49,7 +49,8 @@ if flagKeepOldRecs
     postName = erase(postName, 'O');
 end
 
-[idxStart, idxEnd] = regexpi(postName, '[USIT][_|-]\d+_\d+');
+postName = strrep(postName, '-', '_');
+[idxStart, idxEnd] = regexpi(postName, '[USIT][_]\d+_\d+');
 if ~isempty(idxStart) && idxStart == 1 && idxEnd == length(postName)
     indicesUnderscore = strfind(postName, '_');
     assert(length(indicesUnderscore)==2, ...
@@ -61,17 +62,17 @@ if ~isempty(idxStart) && idxStart == 1 && idxEnd == length(postName)
     roadName = [postName(1), ...
         postName((indicesUnderscore(1)+1):(indicesUnderscore(2)-1))];
     mileage = str2double(postName((indicesUnderscore(2)+1):end));
+
+    if flagIgnoreT && strcmpi(roadName(1), 'T')
+        tollRoads = {'T80', 'T90'};
+        assert(ismember(roadName, tollRoads), ...
+            ['Unknown toll road: ', roadName, '!'])
+
+        roadName(1) = 'I';
+    end
 else
     roadName = '';
     mileage = nan;
-end
-
-if flagIgnoreT && strcmpi(roadName(1), 'T')
-    tollRoads = {'T80', 'T90'};
-    assert(ismember(roadName, tollRoads), ...
-        ['Unknown toll road: ', roadName, '!'])
-
-    roadName(1) = 'I';
 end
 
 end
