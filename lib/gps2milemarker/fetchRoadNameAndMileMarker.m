@@ -1,4 +1,4 @@
-function [roadNames, miles, nearestDistsInM] ...
+function [roadNames, miles, nearestDistsInM, nearestSegNames] ...
     = fetchRoadNameAndMileMarker(lats, lons, ...
     MAX_ALLOWED_DIST_FROM_ROAD_IN_M, flagShowProgress, flagSuppressWarns)
 %FETCHROADNAMEANDMILEMARKER Fetch the road name and mile marker pair for
@@ -50,7 +50,7 @@ end
 
 % The road name is a string in the form like "S49". For highways, we use
 % "S" as State, "I" as Interstate, "T" as Toll, and "U" as US.
-roadNames = cell(numOfGpsSamps, 1);
+[roadNames, nearestSegNames] = deal(cell(numOfGpsSamps, 1));
 % The mile marker and, for debugging, the distance to the road.
 [miles, nearestDistsInM] = deal(nan(numOfGpsSamps, 1));
 
@@ -66,7 +66,8 @@ end
 % modified version.
 for idxSamp = 1:numOfGpsSamps
     try
-        [roadNames{idxSamp}, curMile, ~, curNearestDist] ...
+        [roadNames{idxSamp}, curMile, ~, curNearestDist, ...
+            nearestSegNames{idxSamp}] ...
             = gpsCoor2MileMarker(lats(idxSamp), ...
             lons(idxSamp));
     catch err
@@ -75,6 +76,7 @@ for idxSamp = 1:numOfGpsSamps
         % Fallback values.
         curNearestDist = inf;
         roadNames{idxSamp} = '';
+        nearestSegNames{idxSamp} = '';
     end
 
     if (~isempty(curNearestDist)) ...
@@ -83,6 +85,13 @@ for idxSamp = 1:numOfGpsSamps
         nearestDistsInM(idxSamp) = curNearestDist;
     else
         % Discard the results if the nearest road is too far away.
+        roadNames{idxSamp} = '';
+    end
+
+    % Discard the road name if the nearest segment name is present, in
+    % which case the road name does not comply with the mile marker road
+    % format.
+    if ~isempty(nearestSegNames{idxSamp})
         roadNames{idxSamp} = '';
     end
 

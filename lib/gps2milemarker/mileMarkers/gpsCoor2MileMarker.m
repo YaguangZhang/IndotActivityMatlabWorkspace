@@ -1,4 +1,4 @@
-function [roadName, mile, nearestSegs, nearestDist] = ...
+function [roadName, mile, nearestSegs, nearestDist, nearestSegName] = ...
     gpsCoor2MileMarker(lat, lon)
 % GPSCOOR2MILEMARKER Convert GPS coordinates on INDOT roads (centerline
 % 2019) to road name and mile marker.
@@ -28,15 +28,22 @@ function [roadName, mile, nearestSegs, nearestDist] = ...
 %
 % Outputs:
 %   - roadName
-%     The road road name for the input point.
+%     The road name for the input point.
 %   - mile
 %     A float value. The mile marker for the input point.
 %   - nearestSegs
 %     A struct array for the neareast road segment.
 %   - nearestDist
 %     The distance from the input point to the neareast road segment.
+%   - nearestSegName
+%     For debugging. The road name of the nearest road segment. This is
+%     populated only when the nearest road segment is found, it has a road
+%     name, and the road name for the input point is invalid (normally
+%     because no mile marker with the same road name label can be found).
 %
 % Yaguang Zhang, Purdue, 02/02/2021
+
+nearestSegName = '';
 
 if ~exist('indotRoads', 'var') || ~exist('ROAD_PROJ', 'var')
     if exist('indotRoads', 'var') || exist('ROAD_PROJ', 'var')
@@ -114,9 +121,16 @@ distMileMarkers = pdist2([xMileMaker, yMileMaker], ...
     locationsMileMarkersOnThisRoad);
 sortedDistMileMarkersWithIndices = sortrows([distMileMarkers', ...
     (1:length(distMileMarkers))'], 1);
-nearest2Markers = mileMarkersOnThisRoad(...
-    sortedDistMileMarkersWithIndices(1:2,2)...
-    );
+try
+    nearest2Markers = mileMarkersOnThisRoad(...
+        sortedDistMileMarkersWithIndices(1:2,2)...
+        );
+catch
+    warning(['Unable to find any known mile markers for road: ', ...
+        roadName]);
+    nearestSegName = roadName;
+    return;
+end
 
 % Get the vector of the 2 markers from the marker with smaller postnumber.
 unitMileVector = [nearest2Markers(2).X - nearest2Markers(1).X, ...
