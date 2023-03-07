@@ -52,7 +52,14 @@ nearbySquSideLength = 1000;
 [Xmin, XMax, Ymin, YMax] = constructSquareLimits( ...
     X, Y, nearbySquSideLength);
 
-boundingBoxes = reshape([indotRoads.BoundingBox], 2, 2, []);
+% Cache boundingBoxes in the main workspace to reduce computation time.
+if evalin('base', "~exist('boundingBoxes', 'var')")
+    boundingBoxes = reshape([indotRoads.BoundingBox], 2, 2, []);
+    assignin('base', 'boundingBoxes', boundingBoxes);
+else
+    boundingBoxes = evalin('base', 'boundingBoxes');
+end
+
 nearestSegs = indotRoads(...
     ~(boundingBoxes(1,1,:) > XMax ...
     | boundingBoxes(2,1,:) < Xmin...
