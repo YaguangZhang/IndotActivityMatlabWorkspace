@@ -103,27 +103,32 @@ else
     extraMismatchTable = table(roadLable, mismatch, ...
         distToMismatchInM, mileMarkerIdx);
 
+    % Note that we will only generate the .mat files if they do not exist.
     fullPathToSaveExtraMismatchTable = fullfile(dirToResultMats, ...
         'extraMismatches.mat');
-    save(fullPathToSaveExtraMismatchTable, 'extraMismatchTable');
+    if ~exist(fullPathToSaveExtraMismatchTable, 'file')
+        save(fullPathToSaveExtraMismatchTable, 'extraMismatchTable');
+    end
 end
 
 %% Save the Special Road Name List
 % We will use these lists in funciton getRoadNameFromRoadSeg.m.
 
 % Save the full mismatch list as reference.
-fullPathToSaveSpeCaseTable = fullfile(dirToResultMats, ...
+fullPathToSaveMismatchTable = fullfile(dirToResultMats, ...
     'mismatches.mat');
-save(fullPathToSaveSpeCaseTable, 'mismatchTable');
+if ~exist(fullPathToSaveMismatchTable, 'file')
+    save(fullPathToSaveMismatchTable, 'mismatchTable');
+end
 
 % Get a conversion list from reference road name to mismatch segment name.
 % We will use cells instead of tables for faster speed.
-specialCaseCell = table2cell(mismatchTable(:, 1:2));
+specialCaseCell = upper(table2cell(mismatchTable(:, 1:2)));
 
 % Only consider a special case (mismatchSegNames) if it appears more than
 % once for that road.
-uniqueSpecialCaseCell = table2cell(unique( ...
-    mismatchTable(:, 1:2), 'rows'));
+uniqueSpecialCaseCell = upper(table2cell(unique( ...
+    mismatchTable(:, 1:2), 'rows')));
 for idxUniSpeCaseRow = 1:height(uniqueSpecialCaseCell)
     curUniSpeCaseRow = uniqueSpecialCaseCell(idxUniSpeCaseRow, :);
 
@@ -162,9 +167,11 @@ end
 
 specialCaseCell = uniqueSpecialCaseCell;
 
-fullPathToSaveSpeCaseTable = fullfile(dirToResultMats, ...
+fullPathToSaveSpeCaseCell = fullfile(dirToResultMats, ...
     'specialCases.mat');
-save(fullPathToSaveSpeCaseTable, 'specialCaseCell');
+if ~exist(fullPathToSaveSpeCaseCell, 'file')
+    save(fullPathToSaveSpeCaseCell, 'specialCaseCell');
+end
 
 diary off;
 
