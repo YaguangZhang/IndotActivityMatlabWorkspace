@@ -15,13 +15,13 @@ rmpath(fullfile(pwd, 'lib', 'lidar'));
 % make sure it is correct for the machine to run this script.
 %  - On (quite powerful) Windows Artsy:
 absHomePathWinArtsy = ['D:\One Drive - Purdue\OneDrive - purdue.edu', ...
-    '\OATS\CellCoverageMapper'];
+    '\INDOT\20210929_TelematicsEnabledRecordKeeping'];
 %  - Local copy on the computer cluster at Purdue:
 absHomePathLinuxCoverage = ['/home/coverage', ...
-    '/CellCoverageMapper'];
+    '/20210929_TelematicsEnabledRecordKeeping'];
 %  - Local copy on the computer cluster at Purdue:
 absHomePathLinuxCoverageOnFrankie = ['/home/coverage/nvme/', ...
-    '/CellCoverageMapper'];
+    '/20210929_TelematicsEnabledRecordKeeping'];
 
 % The absolute path to Python 3. Please make sure it is correct for the
 % machine to run this script.
