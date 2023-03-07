@@ -1,4 +1,4 @@
-%TESTROADNAMEREGPATTERN Test the road name label recognition pattern in
+%TESTROADNAMERECPATTERN Test the road name label recognition pattern in
 %getRoadNameFromRoadSeg using mile marker points.
 %
 % Note that in the INDOT centerline data set, we have in the FULL_STREE
@@ -23,7 +23,14 @@ addpath('lib'); curFileName = mfilename;
 
 prepareSimulationEnv;
 
-dirToResults = fullfile(pwd, 'lib', 'gps2milemarker', 'roads');
+dirToResultMats = fullfile(pwd, 'lib', 'gps2milemarker', 'roads');
+dirToDiary = fullfile(ABS_PATH_TO_SHARED_FOLDER, ...
+    'PostProcessingResults', ...
+    'Lib_Gps2MileMarker_RoadNameRecPattern');
+if ~exist(dirToDiary, 'dir')
+    mkdir(dirToDiary)
+end
+diary(fullfile(dirToDiary, 'diary.log'));
 
 %% Fetch Mile Markers and Road Centerlines
 
@@ -63,18 +70,18 @@ flagPlotResults = false;
 % Find disagreements between road segment names and road names in mile
 % marker records.
 boolsMismatch = cellfun(@(segN) ~isempty(segN), nearestSegNames);
-refRoadNames = mmRoadLabels(boolsMismatch);
+refRoadName = mmRoadLabels(boolsMismatch);
 indicesMismatch = find(boolsMismatch);
 
-mismatchSegNames = nearestSegNames(boolsMismatch);
+mismatchSegName = nearestSegNames(boolsMismatch);
 distToMismatchSegInM = nearestDistsInM(boolsMismatch);
-mismatchNamesTable = table(refRoadNames, mismatchSegNames, ...
+mismatchTable = table(refRoadName, mismatchSegName, ...
     distToMismatchSegInM);
 % Remove duplicate rows.
-[mismatchNamesTable, indicesMismatchRows] ...
-    = unique(mismatchNamesTable, 'rows');
+[mismatchTable, indicesMismatchRows] ...
+    = unique(mismatchTable, 'rows');
 idxMileMarker = indicesMismatch(indicesMismatchRows);
-mismatchNamesTable.idxMileMarker = idxMileMarker;
+mismatchTable.idxMileMarker = idxMileMarker;
 
 % Double-check the matched road names.
 if all(arrayfun(@(idx) strcmpi(mmRoadLabels{idx}, roadLabels{idx}), ...
@@ -88,24 +95,77 @@ else
         strcmpi(mmRoadLabels{idx}, roadLabels{idx}), indicesMatch);
     indicesNewMismatch = indicesMatch(boolsNewMismatch);
 
-    roadLables = mmRoadLabels(indicesNewMismatch);
+    roadLable = mmRoadLabels(indicesNewMismatch);
     mismatch = roadLabels(indicesNewMismatch);
     distToMismatchInM = nearestDistsInM(indicesNewMismatch);
     mileMarkerIdx = (1:length(mmRoadLabels))';
     mileMarkerIdx = mileMarkerIdx(indicesNewMismatch);
-    extraMismatchesTable = table(roadLables, mismatch, ...
+    extraMismatchTable = table(roadLable, mismatch, ...
         distToMismatchInM, mileMarkerIdx);
 
-    fullPathToSaveExtraMismatchTable = fullfile(dirToResults, ...
+    fullPathToSaveExtraMismatchTable = fullfile(dirToResultMats, ...
         'extraMismatches.mat');
-    save(fullPathToSaveExtraMismatchTable, 'extraMismatchesTable');
+    save(fullPathToSaveExtraMismatchTable, 'extraMismatchTable');
 end
 
 %% Save the Special Road Name List
 % We will use these lists in funciton getRoadNameFromRoadSeg.m.
 
-fullPathToSaveSpeCaseTable = fullfile(dirToResults, ...
-    'roadNameTableForSpeCases.mat');
-save(fullPathToSaveSpeCaseTable, 'mismatchNamesTable');
+% Save the full mismatch list as reference.
+fullPathToSaveSpeCaseTable = fullfile(dirToResultMats, ...
+    'mismatches.mat');
+save(fullPathToSaveSpeCaseTable, 'mismatchTable');
+
+% Get a conversion list from reference road name to mismatch segment name.
+% We will use cells instead of tables for faster speed.
+specialCaseCell = table2cell(mismatchTable(:, 1:2));
+
+% Only consider a special case (mismatchSegNames) if it appears more than
+% once for that road.
+uniqueSpecialCaseCell = table2cell(unique( ...
+    mismatchTable(:, 1:2), 'rows'));
+for idxUniSpeCaseRow = 1:height(uniqueSpecialCaseCell)
+    curUniSpeCaseRow = uniqueSpecialCaseCell(idxUniSpeCaseRow, :);
+
+    indicesDuplicates = find( arrayfun(@(idxR) ...
+        strcmpi(specialCaseCell{idxR, 1}, curUniSpeCaseRow{1, 1}) ...
+        && strcmpi(specialCaseCell{idxR, 2}, curUniSpeCaseRow{1, 2}), ...
+        1:height(specialCaseCell)) );
+
+    if length(indicesDuplicates) <= 1
+        specialCaseCell(indicesDuplicates, :) = [];
+    end
+end
+
+% Only consider a special case (mismatchSegNames) if it maps to only one
+% road (refRoadNames).
+uniqueSpecialCaseCell = table2cell(unique( ...
+    cell2table(specialCaseCell), 'rows'));
+uniqueMismatchSegNames = unique(uniqueSpecialCaseCell(:, 2));
+numOfUniMisSegNs = length(uniqueMismatchSegNames);
+for idxUniMisSegN = 1:numOfUniMisSegNs
+    curMismatchSegName = uniqueMismatchSegNames{idxUniMisSegN};
+
+    % Search for this segment name in uniqueSpecialCaseTable.
+    indicesRefRoadNames = find(cellfun(@(mismatchSegN) ...
+        strcmpi(curMismatchSegName, mismatchSegN), ...
+        uniqueSpecialCaseCell(:, 2))); % 'mismatchSegName'
+
+    if length(indicesRefRoadNames)>1
+        disp(['Discarding special case (segment name: ', ...
+            curMismatchSegName, ') because it maps to multiple roads...']);
+        disp(uniqueSpecialCaseCell(indicesRefRoadNames, :));
+
+        uniqueSpecialCaseCell(indicesRefRoadNames, :) = [];
+    end
+end
+
+specialCaseCell = uniqueSpecialCaseCell;
+
+fullPathToSaveSpeCaseTable = fullfile(dirToResultMats, ...
+    'specialCases.mat');
+save(fullPathToSaveSpeCaseTable, 'specialCaseCell');
+
+diary off;
 
 % EOF
