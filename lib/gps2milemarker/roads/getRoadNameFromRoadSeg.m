@@ -23,7 +23,7 @@ function roadName = getRoadNameFromRoadSeg(roadSeg)
 %
 % Yaguang Zhang, Purdue, 02/02/2021
 
-if isfield(roadSeg, 'roadName')
+if isfield(roadSeg, 'roadName') && (~isempty(roadSeg.roadName))
     % To speed things up, if roadName is cached in the road segment, just
     % use that result.
     roadName = roadSeg.roadName;
