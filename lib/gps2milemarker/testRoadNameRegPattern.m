@@ -54,9 +54,11 @@ end
 MAX_ALLOWED_DIST_FROM_ROAD_IN_M = 50;
 flagShowProgress = true;
 flagSuppressWarns = true;
+flagPlotResults = false;
 [roadLabels, miles, nearestDistsInM, nearestSegNames] ...
     = fetchRoadNameAndMileMarker(mmLats, mmLons, ...
-    MAX_ALLOWED_DIST_FROM_ROAD_IN_M, flagShowProgress, flagSuppressWarns);
+    MAX_ALLOWED_DIST_FROM_ROAD_IN_M, ...
+    flagShowProgress, flagSuppressWarns, flagPlotResults);
 
 % Find disagreements between road segment names and road names in mile
 % marker records.
@@ -65,7 +67,9 @@ refRoadNames = mmRoadLabels(boolsMismatch);
 indicesMismatch = find(boolsMismatch);
 
 mismatchSegNames = nearestSegNames(boolsMismatch);
-mismatchNamesTable = table(refRoadNames, mismatchSegNames);
+distToMismatchSegInM = nearestDistsInM(boolsMismatch);
+mismatchNamesTable = table(refRoadNames, mismatchSegNames, ...
+    distToMismatchSegInM);
 % Remove duplicate rows.
 [mismatchNamesTable, indicesMismatchRows] ...
     = unique(mismatchNamesTable, 'rows');
@@ -86,9 +90,11 @@ else
 
     roadLables = mmRoadLabels(indicesNewMismatch);
     mismatch = roadLabels(indicesNewMismatch);
+    distToMismatchInM = nearestDistsInM(indicesNewMismatch);
     mileMarkerIdx = (1:length(mmRoadLabels))';
     mileMarkerIdx = mileMarkerIdx(indicesNewMismatch);
-    extraMismatchesTable = table(roadLables, mismatch, mileMarkerIdx);
+    extraMismatchesTable = table(roadLables, mismatch, ...
+        distToMismatchInM, mileMarkerIdx);
 
     fullPathToSaveExtraMismatchTable = fullfile(dirToResults, ...
         'extraMismatches.mat');

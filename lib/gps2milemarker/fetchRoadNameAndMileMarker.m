@@ -1,6 +1,7 @@
 function [roadNames, miles, nearestDistsInM, nearestSegNames] ...
     = fetchRoadNameAndMileMarker(lats, lons, ...
-    MAX_ALLOWED_DIST_FROM_ROAD_IN_M, flagShowProgress, flagSuppressWarns)
+    MAX_ALLOWED_DIST_FROM_ROAD_IN_M, ...
+    flagShowProgress, flagSuppressWarns, flagPlotResults)
 %FETCHROADNAMEANDMILEMARKER Fetch the road name and mile marker pair for
 %GPS coordinates stored in the input variables (lats, lons) one by one.
 %
@@ -19,6 +20,9 @@ function [roadNames, miles, nearestDistsInM, nearestSegNames] ...
 %     Default to false. Set this to true to suppress warnings with IDs
 %     'GPS2MILEMARKER:noNearestRoadSeg' and
 %     'GPS2MILEMARKER:mutipleNearestSegsFound'.
+%   - flagPlotResults
+%     Optional. Default to false. Set this to be true to plot debugging
+%     figures from findNearestRoadSeg.m.
 %
 % Outputs:
 %   - roadNames, miles
@@ -38,6 +42,10 @@ if ~exist('flagShowProgress', 'var')
 end
 if ~exist('flagSuppressWarns', 'var')
     flagSuppressWarns = false;
+end
+
+if ~exist('flagPlotResults', 'var')
+    flagPlotResults = false;
 end
 
 numOfGpsSamps = length(lats);
@@ -68,8 +76,8 @@ for idxSamp = 1:numOfGpsSamps
     try
         [roadNames{idxSamp}, curMile, ~, curNearestDist, ...
             nearestSegNames{idxSamp}] ...
-            = gpsCoor2MileMarker(lats(idxSamp), ...
-            lons(idxSamp));
+            = gpsCoor2MileMarker(lats(idxSamp), lons(idxSamp), ...
+            flagPlotResults);
     catch err
         warning('Error in gpsCoor2MileMarker!')
         disp(getReport(err))

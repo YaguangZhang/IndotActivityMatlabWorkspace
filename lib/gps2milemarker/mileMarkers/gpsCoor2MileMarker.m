@@ -1,5 +1,5 @@
 function [roadName, mile, nearestSegs, nearestDist, nearestSegName] = ...
-    gpsCoor2MileMarker(lat, lon)
+    gpsCoor2MileMarker(lat, lon, flagPlotResults)
 % GPSCOOR2MILEMARKER Convert GPS coordinates on INDOT roads (centerline
 % 2019) to road name and mile marker.
 %
@@ -10,6 +10,9 @@ function [roadName, mile, nearestSegs, nearestDist, nearestSegName] = ...
 %   - lat, lon
 %     The GPS coordinates for the point for which we want to get the high
 %     way road name and mile marker.
+%   - flagPlotResults
+%     Optional. Default to false. Set this to be true to plot debugging
+%     figures from findNearestRoadSeg.m.
 %
 % Implicit inputs (cached in the base workspace):
 %   - indotMileMarkers, indotRoads
@@ -42,6 +45,10 @@ function [roadName, mile, nearestSegs, nearestDist, nearestSegName] = ...
 %     because no mile marker with the same road name label can be found).
 %
 % Yaguang Zhang, Purdue, 02/02/2021
+
+if ~exist('flagPlotResults', 'var')
+    flagPlotResults = false;
+end
 
 nearestSegName = '';
 
@@ -84,7 +91,7 @@ mile = nan;
 
 % Find the nearest road segment(s).
 [nearestSegs, nearestDist] = findNearestRoadSeg(xRoad, yRoad, ...
-    indotRoads, 0);
+    indotRoads, flagPlotResults);
 
 % If no nearest road segment is found, print an error.
 if isempty(nearestSegs)
