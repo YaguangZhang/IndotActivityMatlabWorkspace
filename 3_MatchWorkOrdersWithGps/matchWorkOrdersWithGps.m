@@ -188,29 +188,99 @@ disp(['[', datestr(now, datetimeFormat), ...
     '] Loading IN mile markers and highway centerlines ...'])
 
 loadIndotMileMarkers;
-loadIndotRoads;
 
-disp(['    [', datestr(now, datetimeFormat), ...
-    '] Filtering out non-highway centerlines ...'])
+% We will save this under the root directory PostProcessingResults because
+% it can be used over different work order data sets.
+absPathToCachedIndotHWs = fullfile(pathToSaveResults, ...
+    '..', '..', 'cachedIndotHWs.mat');
+if exist(absPathToCachedIndotHWs, 'file')
+    disp(['    [', datestr(now, datetimeFormat), ...
+        '] INDOT road data processed before. Loading cached results ...'])
+    load(absPathToCachedIndotHWs);
+else
+    loadIndotRoads;
 
-% To speed road name searching up, discard non-highway roads. We have the
-% patterns below copied from getRoadNameFromRoadSeg.m.
-regPats = {'(SR|State Rd|State Road)( |-|)(\d+)', ...
-    '(INTERSTATE HIGHWAY|INTERSTATE|I)( |-|)(\d+)', ...
-    '(US|USHY|US HWY|US HIGHWAY|United States Highway)( |-|)(\d+)'};
-numOfIndotRoads = length(indotRoads);
-boolsIndotRoadsToIgnore = false(1, numOfIndotRoads);
-for idxRoad = 1:numOfIndotRoads
-    if isempty(regexpi(indotRoads(idxRoad).FULL_STREE, ...
-            regPats{1}, 'once')) ...
-            && isempty(regexpi(indotRoads(idxRoad).FULL_STREE, ...
-            regPats{2}, 'once')) ...
-            && isempty(regexpi(indotRoads(idxRoad).FULL_STREE, ...
-            regPats{3}, 'once'))
-        boolsIndotRoadsToIgnore(idxRoad) = true;
+    disp(['    [', datestr(now, datetimeFormat), ...
+        '] Filtering out non-highway centerlines ...'])
+
+    % To speed road name searching up, discard non-highway roads. Supported
+    % methods:
+    %    - 'getRoadNameFromRoadSeg' (Recommended)
+    %      Use outputs from getRoadNameFromRoadSeg. We will (i) remove
+    %      non-highway segments in indotRoads based on the output of the
+    %      function getRoadNameFromRoadSeg and (ii) extend the remaining
+    %      records with the data field roadName (the output of the function
+    %      getRoadNameFromRoadSeg) to further speed up road name
+    %      conversions.
+    %    - 'regPats'
+    %      Use hard-coded Regex patterns.
+    methodToIgnoreNonHW = 'getRoadNameFromRoadSeg';
+
+    numOfIndotRoads = length(indotRoads);
+    boolsIndotRoadsToIgnore = false(1, numOfIndotRoads);
+
+    switch methodToIgnoreNonHW
+        case 'getRoadNameFromRoadSeg'
+            indotRoads(1).roadName = '';
+
+            indotRoadFullStreeCell = {indotRoads.FULL_STREE}';
+
+            uniqueFullStrees = unique(upper(indotRoadFullStreeCell));
+            for idxUniFullStree = 1:length(uniqueFullStrees)
+                curFullStree = uniqueFullStrees{idxUniFullStree};
+
+                indicesIndotRoadsToUpdate = find( ...
+                    strcmpi(indotRoadFullStreeCell, curFullStree))';
+
+                curRoadName = getRoadNameFromRoadSeg( ...
+                    indotRoads(indicesIndotRoadsToUpdate(1)));
+
+                % Check if this road is a highway. Note:
+                %       highwayRegPat = '(S|I|U|T)(\d+)';
+                if length(curRoadName)>1 ...
+                        && any(strcmpi({'S', 'I', 'U', 'T'}, ...
+                        curRoadName(1))) ...
+                        && (~isnan(str2double(curRoadName(2:end))))
+                    % This is a high way. No need to ignore the
+                    % corresponding group of road segments. Need to extend
+                    % the indotRoads records.
+                    for idxIndotRoadToUpdate = indicesIndotRoadsToUpdate
+                        indotRoads(idxIndotRoadToUpdate).roadName ...
+                            = curRoadName; %#ok<SAGROW>
+                    end
+                else
+                    boolsIndotRoadsToIgnore(indicesIndotRoadsToUpdate) = true;
+                end
+            end
+        case 'regPats'
+            % We have the patterns below copied from
+            % getRoadNameFromRoadSeg.m.
+            regPats = {'(SR|S.R.|State Rd|State Road|STATE HWY|STHY|ST RD|S R|IN)( |-|)(\d+)', ...
+                '(INTERSTATE HIGHWAY|INTERSTATE|INT|I)( |-|)(\d+)', ...
+                '(US|USHY|US HWY|U.S. HWY|US HIGHWAY|US ROUTE|U S ROUTE|United States Highway)( |-|)(\d+)'};
+
+            for idxRoad = 1:numOfIndotRoads
+                if isempty(regexpi(indotRoads(idxRoad).FULL_STREE, ...
+                        regPats{1}, 'once')) ...
+                        && isempty(regexpi(indotRoads(idxRoad).FULL_STREE, ...
+                        regPats{2}, 'once')) ...
+                        && isempty(regexpi(indotRoads(idxRoad).FULL_STREE, ...
+                        regPats{3}, 'once'))
+                    boolsIndotRoadsToIgnore(idxRoad) = true;
+                end
+            end
+        otherwise
+            error(['Unkown methodToIgnoreNonHW: ', methodToIgnoreNonHW, '!']);
     end
+
+    indotRoads(boolsIndotRoadsToIgnore) = [];
+
+    disp(' ')
+    disp(['    [', datestr(now, datetimeFormat), ...
+        '] Saving INDOT highway records into a cache .mat file ...'])
+
+    save(absPathToCachedIndotHWs, 'indotRoads', 'ROAD_PROJ');
 end
-indotRoads(boolsIndotRoadsToIgnore) = [];
 
 disp(['[', datestr(now, datetimeFormat), '] Done!'])
 

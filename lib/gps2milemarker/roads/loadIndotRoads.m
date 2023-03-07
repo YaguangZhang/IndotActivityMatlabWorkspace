@@ -30,15 +30,15 @@
 % the results being cached in .mat file.
 flagSaveResultsToMat = true;
 
-nameFoler = 'Streets_Centerlines_IGIO_2019';
+nameFolder = 'Streets_Centerlines_IGIO_2019';
 nameFile = 'Export_Output';
 
 disp('-------------------------------------------------------------')
-disp(['Data set: ', nameFoler])
+disp(['Data set: ', nameFolder])
 
-pathShapeFile = fullfile(ABS_PATH_TO_ROADS, nameFoler, ...
+pathShapeFile = fullfile(ABS_PATH_TO_ROADS, nameFolder, ...
     strcat(nameFile, '.shp'));
-pathShapeMatFile = fullfile(ABS_PATH_TO_ROADS, nameFoler, ...
+pathShapeMatFile = fullfile(ABS_PATH_TO_ROADS, nameFolder, ...
     strcat(nameFile, '.mat'));
 
 if ~exist('ROAD_PROJ', 'var')
