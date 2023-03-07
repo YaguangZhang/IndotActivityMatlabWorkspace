@@ -55,8 +55,12 @@ else
     % Cache specialCaseCell in base workspace.
     curFileDir = fileparts(mfilename('fullpath'));
     fullPathToSpecialCaseList = fullfile(curFileDir, 'specialCases.mat');
-    load(fullPathToSpecialCaseList, 'specialCaseCell');
-    assignin('base', 'specialCaseCell', specialCaseCell);
+    if exist(fullPathToSpecialCaseList, 'file')
+        load(fullPathToSpecialCaseList, 'specialCaseCell');
+        assignin('base', 'specialCaseCell', specialCaseCell);
+    else
+        specialCaseCell = cell(0, 2);
+    end
 end
 
 curSpeCaseIdx = find(arrayfun(@(speCaseIdx) ...
