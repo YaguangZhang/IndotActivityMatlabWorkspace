@@ -25,33 +25,65 @@ function roadName = getRoadNameFromRoadSeg(roadSeg)
 
 roadName = roadSeg.FULL_STREE;
 
-% Some highways are known.
-specialCases = {};% {'WALNUT', 'PIERCE RD', 'MARION RD', 'BROADWAY', 'HWY 150'};
-roadNameForSpeCases = {'S3', 'S4', 'S9', 'S53', 'U150'};
+% Some highways are known, for example:
+%   specialCases = {'WALNUT', 'PIERCE RD', 'MARION RD', ...
+%       'BROADWAY', 'HWY 150'};
+%   roadNameForSpeCases = {'S3', 'S4', 'S9', 'S53', 'U150'};
+% We can do a pattern/substring match to recognize them.
+specialCasePats = {};
+roadNameForSpeCasePats = {};
+
+curSpeCasePatIdx = find(arrayfun(@(speCasePatIdx) ...
+    contains(roadName, specialCasePats{speCasePatIdx}, ...
+    'IgnoreCase', true), 1:length(specialCasePats)));
+
+if ~isempty(curSpeCasePatIdx)
+    assert(length(curSpeCasePatIdx) == 1, ...
+        ['Unexpected duplicate special case road names (by pattern): ', ...
+        roadName, '!']);
+    roadName = roadNameForSpeCasePats{curSpeCasePatIdx};
+    return;
+end
+
+% A reference special-case road name mapping table has been generated based
+% on the IN mile marker dataset (please refer to
+% gps2milemarker/testRoadNameRecPattern.m for more information). We can use
+% that list to recognize some road name aliases.
+if evalin('base', "exist('specialCaseCell', 'var')")
+    specialCaseCell = evalin('base', 'specialCaseCell');
+else
+    % Cache specialCaseCell in base workspace.
+    curFileDir = fileparts(mfilename('fullpath'));
+    fullPathToSpecialCaseList = fullfile(curFileDir, 'specialCases.mat');
+    load(fullPathToSpecialCaseList, 'specialCaseCell');
+    assignin('base', 'specialCaseCell', specialCaseCell);
+end
 
 curSpeCaseIdx = find(arrayfun(@(speCaseIdx) ...
-    contains(roadName, specialCases{speCaseIdx}, ...
-    'IgnoreCase', true), 1:length(specialCases)));
+    strcmpi(roadName, specialCaseCell{speCaseIdx, 2}), ...
+    1:length(specialCaseCell(:,2))));
 
-if isempty(curSpeCaseIdx)
-    % RegExp patterns (case-insensitive) to identify the road types.
-    roadTypes = {'S', 'I', 'U'};
-    regPats = {'(SR|S.R.|State Rd|State Road|STATE HWY|STHY|ST RD|S R|IN)( |-|)(\d+)', ...
-        '(INTERSTATE HIGHWAY|INTERSTATE|INT|I)( |-|)(\d+)', ...
-        '(US|USHY|US HWY|U.S. HWY|US HIGHWAY|US ROUTE|U S ROUTE|United States Highway)( |-|)(\d+)'};
-
-    for idxType = 1:length(roadTypes)
-        ts = regexpi(roadName, regPats{idxType}, 'tokens');
-        if ~isempty(ts)
-            roadNumStr = ts{1}{3};
-            roadName = [roadTypes{idxType}, roadNumStr];
-            break;
-        end
-    end
-else
+if ~isempty(curSpeCaseIdx)
     assert(length(curSpeCaseIdx) == 1, ...
-        ['Unexpected duplicate special case road names: ', roadName, '!']);
-    roadName = roadNameForSpeCases{curSpeCaseIdx};
+        ['Unexpected duplicate special case road names (by list): ', ...
+        roadName, '!']);
+    roadName = specialCaseCell{curSpeCaseIdx, 1};
+    return;
+end
+
+% RegExp patterns (case-insensitive) to identify the road types.
+roadTypes = {'S', 'I', 'U'};
+regPats = {'(SR|S.R.|State Rd|State Road|STATE HWY|STHY|ST RD|S R|IN)( |-|)(\d+)', ...
+    '(INTERSTATE HIGHWAY|INTERSTATE|INT|I)( |-|)(\d+)', ...
+    '(US|USHY|US HWY|U.S. HWY|US HIGHWAY|US ROUTE|U S ROUTE|United States Highway)( |-|)(\d+)'};
+
+for idxType = 1:length(roadTypes)
+    ts = regexpi(roadName, regPats{idxType}, 'tokens');
+    if ~isempty(ts)
+        roadNumStr = ts{1}{3};
+        roadName = [roadTypes{idxType}, roadNumStr];
+        break;
+    end
 end
 
 end
