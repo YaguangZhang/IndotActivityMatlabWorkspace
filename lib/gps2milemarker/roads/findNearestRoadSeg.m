@@ -77,13 +77,21 @@ for idxRoadSeg = 1:length(nearestSegs)
     P1.x = X;
     P1.y = Y;
     % To avoid warnings, clean the polygon vertices by removing successive
-    % indentical points.
+    % identical points.
     P2XYs = [nearestSegs(idxRoadSeg).X, nearestSegs(idxRoadSeg).Y];
     ptsToKeep = [true; sum(P2XYs(2:end, :)==P2XYs(1:(end-1), :), 2) < 2];
     P2.x = P2XYs(ptsToKeep, 1);
     P2.y = P2XYs(ptsToKeep, 2);
+    % Also, terminate P2 vertices with [nan nan] to make sure it is a
+    % polyline instead of a closed polygon.
+    if ~all(isnan([P2.x(end), P2.y(end)]))
+        P2.x(end+1) = nan;
+        P2.y(end+1) = nan;
+    end
 
-    % min_dist_between_two_polygons is faster than p_poly_dist.
+    % min_dist_between_two_polygons is faster and more robust than
+    % p_poly_dist:
+    %       d_min = p_poly_dist(P1.x, P1.y, P2.x, P2.y);
     distRoadSegs(idxRoadSeg) = ...
         min_dist_between_two_polygons(P1,P2,0);
 end

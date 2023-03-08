@@ -37,7 +37,10 @@ function [roadName, mile, nearestSegs, nearestDist, nearestSegName] = ...
 %   - nearestSegs
 %     A struct array for the neareast road segment.
 %   - nearestDist
-%     The distance from the input point to the neareast road segment.
+%     The bigger distance from the input point to (i) the neareast road
+%     segment and (ii) the nearest mile maker used for milage calculation.
+%     Both of these two groups of points should be on the same road but
+%     they may not agree with other very well.
 %   - nearestSegName
 %     For debugging. The road name of the nearest road segment. This is
 %     populated only when the nearest road segment is found, it has a road
@@ -45,6 +48,8 @@ function [roadName, mile, nearestSegs, nearestDist, nearestSegName] = ...
 %     because no mile marker with the same road name label can be found).
 %
 % Yaguang Zhang, Purdue, 02/02/2021
+
+MAX_ALLOWED_DIST_IN_M_TO_NEAREST_MM = 1609.34; % ~1 mile.
 
 if ~exist('flagPlotResults', 'var')
     flagPlotResults = false;
@@ -117,27 +122,44 @@ roadName = roadName{1};
 mileMarkersOnThisRoad = getMileMarkersByRoadName( ...
     roadName, indotMileMarkers);
 
+if length(mileMarkersOnThisRoad)<=1
+    warning(['Unable to find at least 2 mile markers for road: ', ...
+        nearestSegs(1).FULL_STREE, ' (recognized as ', roadName, ')!']);
+    nearestSegName = nearestSegs(1).FULL_STREE;
+    return;
+end
+
 % Get the nearest 2 mile markers. Here we only use them to estimate the
 % mile post for the input point.
-locationsMileMarkersOnThisRoad = zeros(length(mileMarkersOnThisRoad),2);
-for idx = 1:length(mileMarkersOnThisRoad)
-    locationsMileMarkersOnThisRoad(idx,1) = mileMarkersOnThisRoad(idx).X;
-    locationsMileMarkersOnThisRoad(idx,2) = mileMarkersOnThisRoad(idx).Y;
-end
+locationsMileMarkersOnThisRoad = ...
+    [[mileMarkersOnThisRoad.X]', [mileMarkersOnThisRoad.Y]'];
 distMileMarkers = pdist2([xMileMaker, yMileMaker], ...
     locationsMileMarkersOnThisRoad);
 sortedDistMileMarkersWithIndices = sortrows([distMileMarkers', ...
     (1:length(distMileMarkers))'], 1);
-try
-    nearest2Markers = mileMarkersOnThisRoad(...
-        sortedDistMileMarkersWithIndices(1:2,2)...
-        );
-catch
-    warning(['Unable to find any known mile markers for road: ', ...
-        roadName]);
-    nearestSegName = roadName;
+nearest2Markers = mileMarkersOnThisRoad(...
+    sortedDistMileMarkersWithIndices(1:2,2)...
+    );
+
+% Make sure the point of interest is not too far away from the mile
+% markers.
+distsInMToNearest2Markers = distMileMarkers(...
+    sortedDistMileMarkersWithIndices(1:2,2)...
+    );
+if all(distsInMToNearest2Markers>MAX_ALLOWED_DIST_IN_M_TO_NEAREST_MM)
+    warning(['Fetched mile markers are too far away for road: ', ...
+        nearestSegs(1).FULL_STREE, ' (recognized as ', roadName, ')!']);
+    nearestSegName = nearestSegs(1).FULL_STREE;
     return;
 end
+
+% Update nearestDist.
+P1.x = xMileMaker;
+P1.y = yMileMaker;
+P2.x = [locationsMileMarkersOnThisRoad(:, 1); nan];
+P2.y = [locationsMileMarkersOnThisRoad(:, 2); nan];
+nearestDist = max(nearestDist, ...
+    min_dist_between_two_polygons(P1, P2, flagPlotResults));
 
 % Get the vector of the 2 markers from the marker with smaller postnumber.
 unitMileVector = [nearest2Markers(2).X - nearest2Markers(1).X, ...
