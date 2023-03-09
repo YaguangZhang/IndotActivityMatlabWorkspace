@@ -11,7 +11,7 @@ function [roadNames, miles, nearestDistsInM, nearestSegNames] ...
 % Optional inputs:
 %   - MAX_ALLOWED_DIST_FROM_ROAD_IN_M
 %     Default to inf. Maximum allowed distance to a road for the GPS sample
-%     to be labeled as on
+%     to be labeled as on that road.
 % that road.
 %   - flagShowProgress
 %     Default to false. Set this to true for a progress bar in the command

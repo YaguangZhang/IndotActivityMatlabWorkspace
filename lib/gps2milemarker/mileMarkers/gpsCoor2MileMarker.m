@@ -18,7 +18,8 @@ function [roadName, mile, nearestSegs, nearestDist, nearestSegName] = ...
 %       - 2DScatter
 %         Consider all mile markers on the road in the form of (x, y, mile)
 %         to get the mile/post value for the point of interest via 2D
-%         scattered interpolation.
+%         scattered interpolation. We will fall back to Nearest2MMs if
+%         there are less than 3 reference points (mile markers) available.
 %       - Nearest2MMs
 %         Calculate mile value based on the nearest two mile markers to the
 %         point of interest.
@@ -177,10 +178,17 @@ if distsInMToMileMarkerRoute>MAX_ALLOWED_DIST_IN_M_TO_NEAREST_MM
     return;
 end
 
+% It seems scatteredInterpolant needs at least 3 points to work.
+if length(mileMarkersOnThisRoad)<=2
+    mileCalcMethod = 'Nearest2MMs';
+end
+
 switch lower(mileCalcMethod)
     case '2dscatter'
-        mileInterplator = scatteredInterpolant(locationsMileMarkersOnThisRoad(:, 1), ...
-            locationsMileMarkersOnThisRoad(:, 2), mileMarkerMiles);
+        mileInterplator = scatteredInterpolant( ...
+            locationsMileMarkersOnThisRoad(:, 1), ...
+            locationsMileMarkersOnThisRoad(:, 2), mileMarkerMiles, ...
+            'linear', 'linear');
         mile = mileInterplator(xMileMaker, yMileMaker);
     case 'nearest2mms'
         % Get the vector of the 2 markers from the marker with smaller
