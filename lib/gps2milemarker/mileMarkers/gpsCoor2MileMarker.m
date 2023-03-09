@@ -1,5 +1,5 @@
 function [roadName, mile, nearestSegs, nearestDist, nearestSegName] = ...
-    gpsCoor2MileMarker(lat, lon, flagPlotResults)
+    gpsCoor2MileMarker(lat, lon, flagPlotResults, mileCalcMethod)
 % GPSCOOR2MILEMARKER Convert GPS coordinates on INDOT roads (centerline
 % 2019) to road name and mile marker.
 %
@@ -13,6 +13,15 @@ function [roadName, mile, nearestSegs, nearestDist, nearestSegName] = ...
 %   - flagPlotResults
 %     Optional. Default to false. Set this to be true to plot debugging
 %     figures from findNearestRoadSeg.m.
+%   - mileCalcMethod
+%     Optional. Default to '2DScatter'. Options supported are:
+%       - 2DScatter
+%         Consider all mile markers on the road in the form of (x, y, mile)
+%         to get the mile/post value for the point of interest via 2D
+%         scattered interpolation.
+%       - Nearest2MMs
+%         Calculate mile value based on the nearest two mile markers to the
+%         point of interest.
 %
 % Implicit inputs (cached in the base workspace):
 %   - indotMileMarkers, indotRoads
@@ -51,11 +60,15 @@ function [roadName, mile, nearestSegs, nearestDist, nearestSegName] = ...
 % marker dataset vs the road centerline dataset, e.g., U_35_186 to U_35_190
 % are absent in the mile marker dataset, because instead U_6_47 to U_6_51
 % are covering the same road segment, even though the road centerline
-% dataset shows that segment as U35.
-MAX_ALLOWED_DIST_IN_M_TO_NEAREST_MM = 1609.34; % ~1 mile.
+% dataset shows that segment as U35. Note that 1 mile ~= 1609.34 m.
+MAX_ALLOWED_DIST_IN_M_TO_NEAREST_MM = 8046.72; % ~5 miles.
 
 if ~exist('flagPlotResults', 'var')
     flagPlotResults = false;
+end
+
+if ~exist('mileCalcMethod', 'var')
+    mileCalcMethod = '2DScatter';
 end
 
 nearestSegName = '';
@@ -123,7 +136,7 @@ roadName = roadName{1};
 % Next we need to compute the mile marker according to the road name we've
 % gotten.
 flagOrderMMByMile = true;
-mileMarkersOnThisRoad = getMileMarkersByRoadName( ...
+[mileMarkersOnThisRoad, mileMarkerMiles] = getMileMarkersByRoadName( ...
     roadName, indotMileMarkers, flagOrderMMByMile);
 
 if length(mileMarkersOnThisRoad)<=1
@@ -164,29 +177,39 @@ if distsInMToMileMarkerRoute>MAX_ALLOWED_DIST_IN_M_TO_NEAREST_MM
     return;
 end
 
-% Get the vector of the 2 markers from the marker with smaller postnumber.
-unitMileVector = [nearest2Markers(2).X - nearest2Markers(1).X, ...
-    nearest2Markers(2).Y - nearest2Markers(1).Y];
-postNumNearest2Markers = nan(2,1);
-for idxNearestMM = 1:2
-    [~, postNumNearest2Markers(idxNearestMM)] ...
-        = getRoadNameFromMileMarker(nearest2Markers(idxNearestMM));
-end
-if postNumNearest2Markers(1) > postNumNearest2Markers(2)
-    unitMileVector = -unitMileVector;
-    % Also compute the vector from the marker with smaller postnumber to
-    % the input point.
-    inputMileVector = [xMileMaker - nearest2Markers(2).X, ...
-        yMileMaker - nearest2Markers(2).Y];
-else
-    inputMileVector = [xMileMaker - nearest2Markers(1).X, ...
-        yMileMaker - nearest2Markers(1).Y];
-end
+switch lower(mileCalcMethod)
+    case '2dscatter'
+        mileInterplator = scatteredInterpolant(locationsMileMarkersOnThisRoad(:, 1), ...
+            locationsMileMarkersOnThisRoad(:, 2), mileMarkerMiles);
+        mile = mileInterplator(xMileMaker, yMileMaker);
+    case 'nearest2mms'
+        % Get the vector of the 2 markers from the marker with smaller
+        % postnumber.
+        unitMileVector = [nearest2Markers(2).X - nearest2Markers(1).X, ...
+            nearest2Markers(2).Y - nearest2Markers(1).Y];
+        postNumNearest2Markers = nan(2,1);
+        for idxNearestMM = 1:2
+            [~, postNumNearest2Markers(idxNearestMM)] ...
+                = getRoadNameFromMileMarker(nearest2Markers(idxNearestMM));
+        end
+        if postNumNearest2Markers(1) > postNumNearest2Markers(2)
+            unitMileVector = -unitMileVector;
+            % Also compute the vector from the marker with smaller
+            % postnumber to the input point.
+            inputMileVector = [xMileMaker - nearest2Markers(2).X, ...
+                yMileMaker - nearest2Markers(2).Y];
+        else
+            inputMileVector = [xMileMaker - nearest2Markers(1).X, ...
+                yMileMaker - nearest2Markers(1).Y];
+        end
 
-% Compute the postnumber for the input point.
-mile = min(postNumNearest2Markers) + ...
-    dot(inputMileVector, unitMileVector) / ...
-    dot(unitMileVector, unitMileVector);
+        % Compute the postnumber for the input point.
+        mile = min(postNumNearest2Markers) + ...
+            dot(inputMileVector, unitMileVector) / ...
+            dot(unitMileVector, unitMileVector);
+    otherwise
+        error(['Unknown mileCalcMethod: ', mileCalcMethod, '!']);
+end
 
 end
 % EOF
