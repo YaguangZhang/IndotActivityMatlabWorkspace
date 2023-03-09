@@ -1,4 +1,4 @@
-function mileMarkers = getMileMarkersByRoadName( ...
+function [mileMarkers, postNums] = getMileMarkersByRoadName( ...
     roadName, indotMileMarkers, flagOrderMMByMile)
 % GETMILEMARKERSBYROADNAME Find all mile markers marked with the specified
 % road name from the INDOT mile marker database (2016).
@@ -16,6 +16,8 @@ function mileMarkers = getMileMarkersByRoadName( ...
 % Outputs:
 %   - mileMarkers
 %     The mile markers found.
+%   - postNums
+%     The mile marker mileage/post values.
 %
 % Implicit cache variable in the base workspace:
 %   - INDOT_MILE_MARKERS_ROADNAME_LABELS
@@ -41,7 +43,7 @@ mileMarkers = indotMileMarkers(...
     strcmpi(INDOT_MILE_MARKERS_ROADNAME_LABELS, roadName)...
     );
 
-if flagOrderMMByMile
+if nargout>1 || flagOrderMMByMile
     numOfMMs = length(mileMarkers);
     postNums = nan(numOfMMs, 1);
 
@@ -49,8 +51,9 @@ if flagOrderMMByMile
         [~, postNums(idxMM)] ...
             = getRoadNameFromMileMarker(mileMarkers(idxMM));
     end
-
-    [~, indicesOrderedMMs] = sort(postNums, 'ascend');
+end
+if flagOrderMMByMile
+    [postNums, indicesOrderedMMs] = sort(postNums, 'ascend');
     mileMarkers = mileMarkers(indicesOrderedMMs);
 end
 
