@@ -53,6 +53,21 @@ else
         return;
     end
 
+    % RegExp patterns (case-insensitive) to identify the road types.
+    roadTypes = {'S', 'I', 'U'};
+    regPats = {'(SR|S.R.|State Rd|State Road|STATE HWY|STHY|ST RD|S R|IN)( |-|)(\d+)', ...
+        '(INTERSTATE HIGHWAY|INTERSTATE|INT|I)( |-|)(\d+)', ...
+        '(US|USHY|US HWY|U.S. HWY|US HIGHWAY|US ROUTE|U S ROUTE|United States Highway)( |-|)(\d+)'};
+
+    for idxType = 1:length(roadTypes)
+        ts = regexpi(roadName, regPats{idxType}, 'tokens');
+        if ~isempty(ts)
+            roadNumStr = ts{1}{3};
+            roadName = [roadTypes{idxType}, roadNumStr];
+            return;
+        end
+    end
+
     % A reference special-case road name mapping table has been generated
     % based on the IN mile marker dataset (please refer to
     % gps2milemarker/testRoadNameRecPattern.m for more information). We can
@@ -62,7 +77,8 @@ else
     else
         % Cache specialCaseCell in base workspace.
         curFileDir = fileparts(mfilename('fullpath'));
-        fullPathToSpecialCaseList = fullfile(curFileDir, 'specialCases.mat');
+        fullPathToSpecialCaseList = fullfile( ...
+            curFileDir, 'specialCases.mat');
         if exist(fullPathToSpecialCaseList, 'file')
             load(fullPathToSpecialCaseList, 'specialCaseCell');
             assignin('base', 'specialCaseCell', specialCaseCell);
@@ -81,21 +97,6 @@ else
             roadName, '!']);
         roadName = specialCaseCell{curSpeCaseIdx, 1};
         return;
-    end
-
-    % RegExp patterns (case-insensitive) to identify the road types.
-    roadTypes = {'S', 'I', 'U'};
-    regPats = {'(SR|S.R.|State Rd|State Road|STATE HWY|STHY|ST RD|S R|IN)( |-|)(\d+)', ...
-        '(INTERSTATE HIGHWAY|INTERSTATE|INT|I)( |-|)(\d+)', ...
-        '(US|USHY|US HWY|U.S. HWY|US HIGHWAY|US ROUTE|U S ROUTE|United States Highway)( |-|)(\d+)'};
-
-    for idxType = 1:length(roadTypes)
-        ts = regexpi(roadName, regPats{idxType}, 'tokens');
-        if ~isempty(ts)
-            roadNumStr = ts{1}{3};
-            roadName = [roadTypes{idxType}, roadNumStr];
-            break;
-        end
     end
 end
 
