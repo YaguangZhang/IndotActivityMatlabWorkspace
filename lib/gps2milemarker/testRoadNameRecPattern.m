@@ -39,10 +39,11 @@ loadIndotRoads;
 
 % Extract GPS records of the mile markers and use the valid ones as the
 % testing set.
-mmRoadLabels = getRoadNamesForMileMarkers(indotMileMarkers);
+[mmRoadLabels, mmPostNums] = getRoadNamesForMileMarkers(indotMileMarkers);
 boolsValidMmRLs = arrayfun(@(idx) ~isempty(mmRoadLabels{idx}), ...
     1:length(mmRoadLabels));
 mmRoadLabels = mmRoadLabels(boolsValidMmRLs);
+mmPostNums = mmPostNums(boolsValidMmRLs);
 mmLats = [indotMileMarkers(boolsValidMmRLs).Lat]';
 mmLons = [indotMileMarkers(boolsValidMmRLs).Lon]';
 
@@ -68,67 +69,95 @@ flagPlotResults = false;
     flagShowProgress, flagSuppressWarns, flagPlotResults);
 
 % Find disagreements between road segment names and road names in mile
-% marker records.
+% marker records. We will focus on the cases where no valid highway labels
+% are generated.
 boolsMismatch = cellfun(@(segN) ~isempty(segN), nearestSegNames);
 refRoadName = mmRoadLabels(boolsMismatch);
 indicesMismatch = find(boolsMismatch);
 
 mismatchSegName = nearestSegNames(boolsMismatch);
 distToMismatchSegInM = nearestDistsInM(boolsMismatch);
-mismatchTable = table(refRoadName, mismatchSegName, ...
+mismatchByHighwayRecErrTable = table(refRoadName, mismatchSegName, ...
     distToMismatchSegInM);
 % Remove duplicate rows.
-[mismatchTable, indicesMismatchRows] ...
-    = unique(mismatchTable, 'rows');
+[mismatchByHighwayRecErrTable, indicesMismatchRows] ...
+    = unique(mismatchByHighwayRecErrTable, 'rows');
 idxMileMarker = indicesMismatch(indicesMismatchRows);
-mismatchTable.idxMileMarker = idxMileMarker;
+mismatchByHighwayRecErrTable.idxMileMarker = idxMileMarker;
 
-% Double-check the matched road names.
-if all(arrayfun(@(idx) strcmpi(mmRoadLabels{idx}, roadLabels{idx}), ...
-        find(~boolsMismatch)))
-    disp('Matched roads passed test!')
+% Save the full mismatch list as reference. Note that we will only generate
+% the .mat files if they do not exist.
+fullPathToSaveMismatchTables = fullfile(dirToResultMats, ...
+    'mismatches.mat');
+if ~exist(fullPathToSaveMismatchTables, 'file')
+    save(fullPathToSaveMismatchTables, 'mismatchByHighwayRecErrTable');
+end
+
+% For debugging, double-check the valid highway road labels.
+indicesHWLabelValid = find(~boolsMismatch);
+boolsHWLabelMismatch = ~arrayfun(@(idx) ...
+    strcmpi(mmRoadLabels{idx}, roadLabels{idx}), indicesHWLabelValid);
+if all(~boolsHWLabelMismatch)
+    disp('All generated highway road labels passed test!')
 else
-    disp('New mismatched road segments detected!')
+    disp('New mismatched highway road labels detected!')
 
-    indicesMatch = find(~boolsMismatch);
-    boolsNewMismatch = ~arrayfun(@(idx) ...
-        strcmpi(mmRoadLabels{idx}, roadLabels{idx}), indicesMatch);
-    indicesNewMismatch = indicesMatch(boolsNewMismatch);
+    indicesHWLabelMismatch = indicesHWLabelValid(boolsHWLabelMismatch);
 
-    roadLable = mmRoadLabels(indicesNewMismatch);
-    mismatch = roadLabels(indicesNewMismatch);
-    distToMismatchInM = nearestDistsInM(indicesNewMismatch);
+    roadLable = mmRoadLabels(indicesHWLabelMismatch);
+    mismatch = roadLabels(indicesHWLabelMismatch);
+    distToMismatchInM = nearestDistsInM(indicesHWLabelMismatch);
     mileMarkerIdx = (1:length(mmRoadLabels))';
-    mileMarkerIdx = mileMarkerIdx(indicesNewMismatch);
-    extraMismatchTable = table(roadLable, mismatch, ...
+    mileMarkerIdx = mileMarkerIdx(indicesHWLabelMismatch);
+    extraMismatchByHighwayLabelErrTable = table(roadLable, mismatch, ...
         distToMismatchInM, mileMarkerIdx);
 
-    % Note that we will only generate the .mat files if they do not exist.
-    fullPathToSaveExtraMismatchTable = fullfile(dirToResultMats, ...
-        'extraMismatches.mat');
-    if ~exist(fullPathToSaveExtraMismatchTable, 'file')
-        save(fullPathToSaveExtraMismatchTable, 'extraMismatchTable');
-    end
+    save(fullPathToSaveMismatchTables, ...
+        'extraMismatchByHighwayLabelErrTable', '-append');
+end
+
+% For debugging, double-check the post numbers of the correct highway road
+% labels.
+indicesHWLabelMatch = indicesHWLabelValid(~boolsHWLabelMismatch);
+if isempty(indicesHWLabelMatch)
+    disp('No matched highway labels found! Skipping post number test...')
+else
+    disp('Matched highway labels found! Generating comparison table...')
+
+    mmRoadLable = mmRoadLabels(indicesHWLabelMatch);
+    mmPostNum = mmPostNums(indicesHWLabelMatch);
+    postNum = miles(indicesHWLabelMatch);
+    errInMile = postNum-mmPostNum;
+
+    extraMismatchByPostNumErrTable = sortrows( ...
+        table(mmRoadLable, mmPostNum, postNum, errInMile, ...
+        indicesHWLabelMatch));
+
+    save(fullPathToSaveMismatchTables, ...
+        'extraMismatchByPostNumErrTable', '-append');
+
+    % Generate an overview plot for the post number error.
+    hPostNumErr = figure;
+    plot(errInMile, '.-');
+    grid on; grid minor; axis tight;
+    title('Post Num Error (mile) for Matched Road Labels');
+    xlabel('Reference Mile Marker Count');
+    ylabel('Detected Post Number Minus Ground Truth (mile)');
+    saveas(hPostNumErr, ...
+        fullfile(dirToDiary, 'extraMismatch_PostNumErr.jpg'));
 end
 
 %% Save the Special Road Name List
-% We will use these lists in funciton getRoadNameFromRoadSeg.m.
-
-% Save the full mismatch list as reference.
-fullPathToSaveMismatchTable = fullfile(dirToResultMats, ...
-    'mismatches.mat');
-if ~exist(fullPathToSaveMismatchTable, 'file')
-    save(fullPathToSaveMismatchTable, 'mismatchTable');
-end
+% We will use this list in funciton getRoadNameFromRoadSeg.m.
 
 % Get a conversion list from reference road name to mismatch segment name.
 % We will use cells instead of tables for faster speed.
-specialCaseCell = upper(table2cell(mismatchTable(:, 1:2)));
+specialCaseCell = upper(table2cell(mismatchByHighwayRecErrTable(:, 1:2)));
 
 % Only consider a special case (mismatchSegNames) if it appears more than
 % once for that road.
 uniqueSpecialCaseCell = upper(table2cell(unique( ...
-    mismatchTable(:, 1:2), 'rows')));
+    mismatchByHighwayRecErrTable(:, 1:2), 'rows')));
 for idxUniSpeCaseRow = 1:height(uniqueSpecialCaseCell)
     curUniSpeCaseRow = uniqueSpecialCaseCell(idxUniSpeCaseRow, :);
 
