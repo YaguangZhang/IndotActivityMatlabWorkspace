@@ -170,6 +170,10 @@ MAX_ALLOWED_DIST_FROM_ROAD_IN_M = 50;
 % case where the mile markers are not retrieved ahead of time.
 FLAG_PREPROCESS_GPS_FOR_ROADNAME_AND_MILEMARKER = true;
 
+% Set this to be true to only sum up detected work hours and mileages for
+% recognized highways.
+FLAG_IGNORE_UNKNOWN_ROADS = false;
+
 % A list of pre-determined colors.
 colorOrder = colororder;
 colorGrey = ones(1,3).*0.5;
@@ -194,6 +198,7 @@ loadIndotMileMarkers;
 absPathToCachedIndotHWs = fullfile(pathToSaveResults, ...
     '..', '..', 'cachedIndotHWs.mat');
 if exist(absPathToCachedIndotHWs, 'file')
+    disp(' ')
     disp(['    [', datestr(now, datetimeFormat), ...
         '] INDOT road data processed before. Loading cached results ...'])
     load(absPathToCachedIndotHWs);
@@ -811,9 +816,8 @@ activityTracksAsSampIndicesInParsedGLT = cell(numOfWorkOrderGroups, 1);
 disp(['    [', datestr(now, datetimeFormat), ...
     '] Extracting work information and generating figures as needed ...'])
 
-% For progress feedback. We will get more updates because this procedure
-% takes a long time to finish.
-proBar = betterProBar(numOfWorkOrderGroups, 1000);
+% For progress feedback.
+proBar = betterProBar(numOfWorkOrderGroups);
 % Debugging notes
 %   With all records:
 %       - 5435
@@ -1352,8 +1356,13 @@ for idxWOG = 1:numOfWorkOrderGroups
 
                 % Add a title with aggregated information.
                 dateStrFormat = 'yyyy/mm/dd';
-                curDetectedWorkInH = sum(segLengthsInH(2:end));
-                curDetectedWorkInM = sum(segLengthsInM(2:end));
+                if FLAG_IGNORE_UNKNOWN_ROADS
+                    curDetectedWorkInH = sum(segLengthsInH(2:end));
+                    curDetectedWorkInM = sum(segLengthsInM(2:end));
+                else
+                    curDetectedWorkInH = sum(segLengthsInH);
+                    curDetectedWorkInM = sum(segLengthsInM);
+                end
                 titleToPlot = {[strrep(curDatetimeRangeStr, '_', ' '), ...
                     ', WO #', num2str(curWOId), ...
                     ', Activity #', num2str(curActId), ...
@@ -2295,7 +2304,7 @@ for idxWOG = 1:numOfWorkOrderGroups
                 %% TODO: wait here.
                 % For now... there is nothing else to do after the debug
                 % figures are generated.
-                pause;
+                %   pause;
             end
         end
     end
