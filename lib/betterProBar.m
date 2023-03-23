@@ -38,7 +38,7 @@ classdef betterProBar < handle
                 flagNeedToEnableDiary = true;
             end
 
-            obj.proBar = ProgressBar(obj.numOfProBarUpdates);
+            obj.proBar = fastProgressBar(obj.numOfProBarUpdates);
 
             if flagNeedToEnableDiary
                 diary on;
